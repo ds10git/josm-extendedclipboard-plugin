@@ -5,6 +5,7 @@ import static org.openstreetmap.josm.tools.I18n.tr;
 
 import java.awt.Component;
 import java.awt.event.ActionEvent;
+import java.awt.event.InputEvent;
 import java.awt.event.KeyEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
@@ -44,6 +45,7 @@ import org.openstreetmap.josm.gui.layer.MainLayerManager.ActiveLayerChangeListen
 import org.openstreetmap.josm.gui.layer.OsmDataLayer;
 import org.openstreetmap.josm.spi.preferences.Config;
 import org.openstreetmap.josm.tools.ImageProvider;
+import org.openstreetmap.josm.tools.ImageResource;
 import org.openstreetmap.josm.tools.Shortcut;
 import org.openstreetmap.josm.tools.Utils;
 
@@ -63,6 +65,7 @@ public class ExtendedClipboardDialog extends ToggleDialog implements DataSelecti
   private final NewClipboardAction clipboardNew = new NewClipboardAction();
   private final EditAction edit = new EditAction();
   private final ReverseAction reverse = new ReverseAction();
+  private final ReverseActionAdd reverseAdd = new ReverseActionAdd();
   private final RestoreAction restore = new RestoreAction();
   private final ClearAction clear = new ClearAction();
   private final DeleteAction delete = new DeleteAction();
@@ -84,20 +87,19 @@ public class ExtendedClipboardDialog extends ToggleDialog implements DataSelecti
   private final AbstractAction remember;
   private final AbstractAction unremember;
   
+  private boolean iconAddToNewList = true;
+  
   public ExtendedClipboardDialog() {
     super(tr("Extended Clipboard"), "extendedclipboard", tr("Store selection for later reselection."),
         Shortcut.registerShortcut("ExtendedClipBoardDialog.extendedclipboard", tr("Windows: {0}", tr("Extended Clipboard")), KeyEvent.VK_B,
                 Shortcut.ALT_SHIFT), 150, true);
     modelTable = new Hashtable<>();
-    clipboard = new JList<>();
-    add.putValue(Action.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_D, 0));
-    addNew.putValue(Action.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_D, KeyEvent.CTRL_DOWN_MASK | KeyEvent.SHIFT_DOWN_MASK));
-    
-    remember = new AbstractAction(tr("Remember list name"), ImageProvider.get("save")) {
+    clipboard = new JList<>();    
+    remember = new AbstractAction(tr("Remember clipboard name"), ImageProvider.get("save")) {
       @Override
       public void actionPerformed(ActionEvent arg0) {
         final List<String> list = Config.getPref().getList(PREF_NAMES);
-        final String name = clipboard.getSelectedValue().name;
+        final String name = clipboard.getSelectedValue().getNameOnly();
         
         if(!list.contains(name)) {
           ArrayList<String> result = new ArrayList<>();
@@ -112,11 +114,11 @@ public class ExtendedClipboardDialog extends ToggleDialog implements DataSelecti
         }
       }
     };
-    unremember = new AbstractAction(tr("Unremember list name"), ImageProvider.get("purge")) {
+    unremember = new AbstractAction(tr("Unremember clipboard name"), ImageProvider.get("purge")) {
       @Override
       public void actionPerformed(ActionEvent arg0) {
         final List<String> list = Config.getPref().getList(PREF_NAMES);
-        final String name = clipboard.getSelectedValue().name;
+        final String name = clipboard.getSelectedValue().getNameOnly();
         
         if(list.contains(name)) {
           ArrayList<String> result = new ArrayList<>();
@@ -230,16 +232,40 @@ public class ExtendedClipboardDialog extends ToggleDialog implements DataSelecti
           
           clipboard.setSelectedIndex(index);
         }
+        
+        updateBtnEnabledState();
       }
     };
     clipboard.addMouseListener(mouseAdapter);
     clipboard.addMouseMotionListener(mouseAdapter);
     
+    final AbstractAction iconListener = new AbstractAction() {
+      @Override
+      public void actionPerformed(ActionEvent e) {
+        updateBtnAddIconAndTooltip(OsmDataManager.getInstance().getActiveDataSet(), (e.getModifiers() & ActionEvent.CTRL_MASK) == ActionEvent.CTRL_MASK);
+        updateBtnReverseIconAndTooltip(OsmDataManager.getInstance().getActiveDataSet(), (e.getModifiers() & ActionEvent.CTRL_MASK) == ActionEvent.CTRL_MASK);
+      }
+    };
+    
+    clipboard.getInputMap(WHEN_IN_FOCUSED_WINDOW).put(KeyStroke.getKeyStroke(KeyEvent.VK_CONTROL, InputEvent.CTRL_DOWN_MASK), "CTRL_DOWN");
+    clipboard.getInputMap(WHEN_IN_FOCUSED_WINDOW).put(KeyStroke.getKeyStroke(KeyEvent.VK_CONTROL, 0, true), "CTRL_UP");
     clipboard.getActionMap().put("clipboard.add", add);
     clipboard.getActionMap().put("clipboard.addNew", addNew);
-        
+    clipboard.getActionMap().put("CTRL_DOWN", iconListener);
+    clipboard.getActionMap().put("CTRL_UP", iconListener);
+    
+    btnAdd.setIcon(((ImageResource)addNew.getValue("ImageResource")).getImageIconBounded(ImageProvider.ImageSizes.SIDEBUTTON.getImageDimension()));
+    btnAdd.setToolTipText((String)addNew.getValue(Action.SHORT_DESCRIPTION));
+    
     Component c = createLayout(clipboard, true, Arrays.asList(this.btnAdd, this.btnRemove, this.btnClear, this.btnReverse, this.btnRestore, this.btnNewClipboard, this.btnEdit, this.btnDelete));
     clipboard.setSize(c.getSize());
+  }
+  
+  private JMenuItem createJMenuItemFrom(JosmAction a) {
+    final JMenuItem item = new JMenuItem(a);
+    item.setText((String)a.getValue(Action.SHORT_DESCRIPTION));
+    
+    return item;
   }
   
   private void createListPopupMenu() {
@@ -247,22 +273,24 @@ public class ExtendedClipboardDialog extends ToggleDialog implements DataSelecti
     
     listPopupMenu.add(rememberItem);
     listPopupMenu.addSeparator();
-    listPopupMenu.add(add);
-    listPopupMenu.add(addNew);
-    listPopupMenu.add(remove);
-    listPopupMenu.add(clear);
-    listPopupMenu.add(reverse);
-    listPopupMenu.add(restore);
+    listPopupMenu.add(createJMenuItemFrom(add));
+    listPopupMenu.add(createJMenuItemFrom(addNew));
+    listPopupMenu.add(createJMenuItemFrom(remove));
+    listPopupMenu.add(createJMenuItemFrom(clear));
+    listPopupMenu.add(createJMenuItemFrom(reverse));
+    listPopupMenu.add(createJMenuItemFrom(reverseAdd));
+    listPopupMenu.add(createJMenuItemFrom(restore));
     listPopupMenu.addSeparator();
-    listPopupMenu.add(clipboardNew);
-    listPopupMenu.add(delete);
+    listPopupMenu.add(createJMenuItemFrom(clipboardNew));
+    listPopupMenu.add(createJMenuItemFrom(edit));
+    listPopupMenu.add(createJMenuItemFrom(delete));
   }
   
   private void updateListPopupMenu(boolean isOnEntry) {
     rememberItem.setEnabled(isOnEntry);
     
     if(isOnEntry && clipboard.getSelectedIndex() >= 0) {
-      if(Config.getPref().getList(PREF_NAMES).contains(clipboard.getSelectedValue().name)) {
+      if(Config.getPref().getList(PREF_NAMES).contains(clipboard.getSelectedValue().getNameOnly())) {
         rememberItem.setAction(unremember);
       }
       else {
@@ -291,12 +319,47 @@ public class ExtendedClipboardDialog extends ToggleDialog implements DataSelecti
   }
   
   private void updateBtnEnabledState() {
+    add.updateEnabledState();
     edit.updateEnabledState();
     reverse.updateEnabledState();
+    reverseAdd.updateEnabledState();
     restore.updateEnabledState();
     delete.updateEnabledState();
     clear.updateEnabledState();
     remove.updateEnabledState();
+    repaintRow(clipboard.getSelectedIndex());
+  }
+
+  private void repaintRow(int index) {
+    if(index >= 0) {
+      clipboard.repaint(clipboard.getCellBounds(index, index));
+    }
+  }
+  
+  private void updateBtnAddIconAndTooltip(DataSet ds, boolean ctrl_down) {
+    if(clipboard != null && model != null) {
+      if((iconAddToNewList && clipboard.getSelectedIndex() >= 0 && !clipboard.getSelectedValue().containsAll(ds.getSelected()))) {
+        btnAdd.setIcon(((ImageResource)add.getValue("ImageResource")).getImageIconBounded(ImageProvider.ImageSizes.SIDEBUTTON.getImageDimension()));
+        btnAdd.setToolTipText((String)add.getValue(Action.SHORT_DESCRIPTION));
+        iconAddToNewList = false;
+      }
+      else if(ctrl_down || (!iconAddToNewList && (clipboard.getSelectedIndex() < 0 || clipboard.getSelectedValue().containsAll(ds.getSelected())))) {
+        btnAdd.setIcon(((ImageResource)addNew.getValue("ImageResource")).getImageIconBounded(ImageProvider.ImageSizes.SIDEBUTTON.getImageDimension()));
+        btnAdd.setToolTipText((String)addNew.getValue(Action.SHORT_DESCRIPTION));
+        iconAddToNewList = true;
+      }
+    }
+  }
+  
+  private void updateBtnReverseIconAndTooltip(DataSet ds, boolean ctrl_down) {
+    if(clipboard != null && model != null && clipboard.getSelectedIndex() >= 0 && clipboard.getSelectedValue().size() > 1 && ctrl_down) {
+      btnReverse.setIcon(((ImageResource)reverseAdd.getValue("ImageResource")).getImageIconBounded(ImageProvider.ImageSizes.SIDEBUTTON.getImageDimension()));
+      btnReverse.setToolTipText((String)reverseAdd.getValue(Action.SHORT_DESCRIPTION));
+    }
+    else {
+      btnReverse.setIcon(((ImageResource)reverse.getValue("ImageResource")).getImageIconBounded(ImageProvider.ImageSizes.SIDEBUTTON.getImageDimension()));
+      btnReverse.setToolTipText((String)reverse.getValue(Action.SHORT_DESCRIPTION));
+    }
   }
   
   @Override
@@ -304,6 +367,7 @@ public class ExtendedClipboardDialog extends ToggleDialog implements DataSelecti
     SelectionEventManager.getInstance().addSelectionListenerForEdt(this);
     MainApplication.getLayerManager().addActiveLayerChangeListener(this);
     clipboardNew.setEnabled(model != null);
+    updateBtnEnabledState();
   }
   
   @Override
@@ -352,7 +416,7 @@ public class ExtendedClipboardDialog extends ToggleDialog implements DataSelecti
   
   class NewClipboardAction extends JosmAction {
     NewClipboardAction() {
-        super(tr("Add new clipboard"), /* ICON() */ "addclipboard", tr("Create new clipboard"),/*Shortcut*/ null, false);
+        super(null, /* ICON() */ "addclipboard", tr("Create new clipboard"),/*Shortcut*/ null, false);
     }
     
     @Override
@@ -363,17 +427,17 @@ public class ExtendedClipboardDialog extends ToggleDialog implements DataSelecti
   
   class EditAction extends JosmAction {
     EditAction() {
-        super(tr("Rename clipboard"), /* ICON() */ "dialogs/edit", tr("Edit name of clipboard entry"),/*Shortcut*/ null, false);
+        super(null, /* ICON() */ "dialogs/edit", tr("Edit name of selected clipboard "),/*Shortcut*/ null, false);
     }
     
     @Override
     public void actionPerformed(ActionEvent e) {
       ClipboardEntry entry = clipboard.getSelectedValue();
-      String result = JOptionPane.showInputDialog(MainApplication.getMainFrame(), tr("Name:"), entry.name);
+      String result = JOptionPane.showInputDialog(MainApplication.getMainFrame(), tr("Name:"), entry.getNameOnly());
       
       if(result != null && !result.isBlank()) {
-        entry.name = result;
-        clipboard.repaint();
+        entry.setName(result);
+        repaintRow(clipboard.getSelectedIndex());
       }
     }
     
@@ -386,12 +450,12 @@ public class ExtendedClipboardDialog extends ToggleDialog implements DataSelecti
   
   class ClearAction extends JosmAction {
     ClearAction() {
-        super(tr("Clear selected clipboard"), /* ICON() */ "purge", tr("Clear selection from selected clipboard"),/*Shortcut*/ null, false);
+        super(null, /* ICON() */ "purge", tr("Clear selected clipboard"),/*Shortcut*/ null, false);
     }
     
     @Override
     public void actionPerformed(ActionEvent e) {
-      clipboard.getSelectedValue().selection.clear();
+      clipboard.getSelectedValue().clear();
       updateBtnEnabledState();
     }
     
@@ -404,7 +468,7 @@ public class ExtendedClipboardDialog extends ToggleDialog implements DataSelecti
 
   class DeleteAction extends JosmAction {
     DeleteAction() {
-        super(tr("Delete selected clipboard"), /* ICON() */ "dialogs/delete", tr("Delete selected clipboard from list"),/*Shortcut*/ null, false);
+        super(null, /* ICON() */ "dialogs/delete", tr("Delete selected clipboard"),/*Shortcut*/ null, false);
     }
     
     @Override
@@ -427,7 +491,7 @@ public class ExtendedClipboardDialog extends ToggleDialog implements DataSelecti
   
   class ReverseAction extends JosmAction {
     ReverseAction() {
-        super(tr("Reverse selection order"), /* ICON() */ "dialogs/reverse", tr("Reverse order of selection of selected clipboard entry"),/*Shortcut*/ null, false);
+        super(null, /* ICON() */ "dialogs/reverse", tr("Reverse order of objects of selected clipboard"),/*Shortcut*/ null, false);
     }
     
     @Override
@@ -452,10 +516,10 @@ public class ExtendedClipboardDialog extends ToggleDialog implements DataSelecti
       }
       
       if(entry.name.endsWith("\u2B07")) {
-        entry.name = entry.name.substring(0,entry.name.length()-2);
+        entry.setName(entry.name.substring(0,entry.name.length()-2));
       }
       else {
-        entry.name = entry.name + " \u2B07";
+        entry.setName(entry.name + " \u2B07");
       }
       
       updateBtnEnabledState();
@@ -465,14 +529,30 @@ public class ExtendedClipboardDialog extends ToggleDialog implements DataSelecti
 
     @Override
     protected final void updateEnabledState() {
-      setEnabled(clipboard != null && clipboard.getSelectedIndex() >= 0 && clipboard.getSelectedValue().selection.size() > 1);
+      setEnabled(clipboard != null && clipboard.getSelectedIndex() >= 0 && clipboard.getSelectedValue().size() > 1);
+    }
+  }
+  
+  class ReverseActionAdd extends JosmAction {
+    ReverseActionAdd() {
+      super(null, /* ICON() */ "reverseadd", tr("Reverse order of objects of selected clipboard and add them to new clipboard"),/*Shortcut*/ null, false);
+    }
+
+    @Override
+    public void actionPerformed(ActionEvent e) {
+      reverse.actionPerformed(new ActionEvent(e.getSource(), e.getID(), e.getActionCommand(), ActionEvent.CTRL_MASK));
+    }
+    
+    @Override
+    protected final void updateEnabledState() {
+      setEnabled(clipboard != null && clipboard.getSelectedIndex() >= 0 && clipboard.getSelectedValue().size() > 1);
     }
   }
   
   class AddAction extends JosmAction {
     AtomicBoolean isPerforming = new AtomicBoolean(false);
     AddAction() {
-        super(tr("Add selection to selected clipboard"), /* ICON() */ "dialogs/add", tr("Add current selection to extended clipboard"),
+        super(null, /* ICON() */ "dialogs/add", tr("Add current selection to selected clipboard"),
                 Shortcut.registerShortcut("extendedclipboard.add", tr("Add Selection to Extended Clipboard"), KeyEvent.VK_D,
                         Shortcut.DIRECT), false);
     }
@@ -483,13 +563,16 @@ public class ExtendedClipboardDialog extends ToggleDialog implements DataSelecti
             return;
         }
         try {
-          ClipboardEntry entry = clipboard.getSelectedValue();
+          final ClipboardEntry entry = clipboard.getSelectedValue();
+          final Collection<OsmPrimitive> selection = OsmDataManager.getInstance().getActiveDataSet().getSelected();
           
-          if((entry == null || ((e.getModifiers() & ActionEvent.CTRL_MASK) == ActionEvent.CTRL_MASK)) && model != null) {
+          if((entry == null || ((e.getModifiers() & ActionEvent.CTRL_MASK) == ActionEvent.CTRL_MASK)
+              || clipboard.getSelectedIndex() < 0 || clipboard.getSelectedValue().containsAll(selection)
+              ) && model != null) {
             addNewClipboardEntry();
           }
           else {
-            entry.selection.addAll(OsmDataManager.getInstance().getActiveDataSet().getSelected());
+            entry.addAll(selection);
             updateBtnEnabledState();
           }
         } finally {
@@ -500,6 +583,9 @@ public class ExtendedClipboardDialog extends ToggleDialog implements DataSelecti
     @Override
     protected final void updateEnabledState() {
         DataSet ds = OsmDataManager.getInstance().getActiveDataSet();
+        
+        updateBtnAddIconAndTooltip(ds, false);
+        
         setEnabled(ds != null && !ds.isLocked() &&
                 !Utils.isEmpty(OsmDataManager.getInstance().getInProgressSelection()) && !ds.isEmpty() && model != null);
     }
@@ -508,7 +594,7 @@ public class ExtendedClipboardDialog extends ToggleDialog implements DataSelecti
   class AddNewAction extends JosmAction {
     AtomicBoolean isPerforming = new AtomicBoolean(false);
     AddNewAction() {
-        super(tr("Add selection as new clipboard"), /* ICON() */ "addnew", tr("Add current selection to extended clipboard as a new entry"),
+        super(null, /* ICON() */ "addnew", tr("Add current selection to new clipboard"),
                 Shortcut.registerShortcut("extendedclipboard.addNew", tr("Add Selection to Extended Clipboard as New Entry"), KeyEvent.VK_D,
                         Shortcut.CTRL_SHIFT), false);
     }
@@ -536,7 +622,7 @@ public class ExtendedClipboardDialog extends ToggleDialog implements DataSelecti
   class RemoveAction extends JosmAction {
     AtomicBoolean isPerforming = new AtomicBoolean(false);
     RemoveAction() {
-        super(tr("Remove selection from selected clipboard"), /* ICON() */ "remove", tr("Remove current selection from the selected extended clipboard"),/*Shortcut*/ null, false);
+        super(null, /* ICON() */ "remove", tr("Remove current selection from selected clipboard"),/*Shortcut*/ null, false);
     }
 
     @Override
@@ -564,7 +650,7 @@ public class ExtendedClipboardDialog extends ToggleDialog implements DataSelecti
   
   class RestoreAction extends JosmAction {
     RestoreAction() {
-        super(tr("Restore selection"), /* ICON() */ "apply", tr("Restore the selection of the selected clipboard"),/*Shortcut*/ null, false);
+        super(null, /* ICON() */ "dialogs/select", tr("Restore the selection of the selected clipboard"),/*Shortcut*/ null, false);
     }
     
     @Override
@@ -580,8 +666,9 @@ public class ExtendedClipboardDialog extends ToggleDialog implements DataSelecti
   }
   
   private final static class ClipboardEntry {
-    LinkedHashSet<OsmPrimitive> selection;
-    String name;
+    private LinkedHashSet<OsmPrimitive> selection;
+    private String name;
+    private String nameTemplate;
     
     private ClipboardEntry(String name) {
       this(name, null);
@@ -593,12 +680,15 @@ public class ExtendedClipboardDialog extends ToggleDialog implements DataSelecti
     
     private ClipboardEntry(String name, Collection<OsmPrimitive> selection) {
       this.selection = new LinkedHashSet<>();
+      setName(name);
       
       if(selection != null) {
-        this.selection.addAll(selection);
+        addAll(selection);
       }
-      
-      this.name = name; 
+    }
+    
+    public String getNameOnly() {
+      return nameTemplate.replace(" ({0})", "");
     }
     
     @Override
@@ -627,6 +717,10 @@ public class ExtendedClipboardDialog extends ToggleDialog implements DataSelecti
       return selection.isEmpty();
     }
     
+    private boolean containsAll(Collection<OsmPrimitive> selection) {
+      return this.selection != null && this.selection.containsAll(selection);
+    }
+    
     private boolean contains(Collection<OsmPrimitive> selection) {
       for(OsmPrimitive sel : selection) {
         if(this.selection.contains(sel)) {
@@ -637,8 +731,47 @@ public class ExtendedClipboardDialog extends ToggleDialog implements DataSelecti
       return false;
     }
     
+    private void setName(String name) {
+      if(name.matches(".*\\(\\d+\\).*")) {
+        nameTemplate = name.replaceAll("\\(\\d+\\)", "({0})");
+      }
+      else {
+        nameTemplate = name+" ({0})";
+      }
+      
+      if(nameTemplate.contains(" \u2B07")) {
+        nameTemplate = nameTemplate.replace(" \u2B07", "") + " \u2B07";
+      }
+      
+      refreshName();
+    }
+    
+    private void addAll(Collection<OsmPrimitive> selection) {
+      this.selection.addAll(selection);
+      refreshName();
+    }
+    
     private void remove(Collection<OsmPrimitive> selection) {
       this.selection.removeAll(selection);
+      refreshName();
+    }
+    
+    private void refreshName() {
+      name = nameTemplate.replace("{0}", String.valueOf(size()));
+    }
+    
+    private void clear() {
+      this.selection.clear();
+      refreshName();
+    }
+    
+    private int size() {
+      if(selection != null) {
+        return selection.size();
+      }
+      else {
+        return 0;
+      }
     }
   }
 }

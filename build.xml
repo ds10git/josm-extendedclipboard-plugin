@@ -24,8 +24,9 @@
     <property name="plugin.author" value="René Mach"/>
     <property name="plugin.class" value="org.openstreetmap.josm.plugins.extendedclipboard.ExtendedClipboardPlugin"/>
     <property name="plugin.description" value="Provides a list of up to 10 clipboards to store multiple selections."/>
+	<property name="de.plugin.description" value="Stellt eine Liste mit bis zu 10 Zwischenablagen zum Abspeichern mehrere Auswahlen zur Verfügung."/>
     <property name="plugin.icon" value="images/dialogs/extendedclipboard.svg"/>
-    <property name="plugin.canloadatruntime" value="true"/>
+    <property name="plugin.canloadatruntime" value="false"/>
 <!--    <property name="plugin.link" value="..."/> -->
     <!--<property name="plugin.early" value="..."/>-->
     <!--<property name="plugin.requires" value="..."/>-->
