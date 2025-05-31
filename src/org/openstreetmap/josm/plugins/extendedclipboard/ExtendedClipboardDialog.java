@@ -277,16 +277,9 @@ public class ExtendedClipboardDialog extends ToggleDialog implements DataSelecti
     clipboard.setSize(c.getSize());
   }
   
-  private JMenuItem createJMenuItemFrom(JosmAction a) {
-    final JMenuItem item = new JMenuItem(a);
-    item.setText((String)a.getValue(Action.SHORT_DESCRIPTION));
-    
-    return item;
-  }
-  
   private void createSelectionPopupMenu() {
-    selectionPopupMenu.add(createJMenuItemFrom(selectNodes));
-    selectionPopupMenu.add(createJMenuItemFrom(selectWays));
+    selectionPopupMenu.add(MenuUtils.createJMenuItemFrom(selectNodes));
+    selectionPopupMenu.add(MenuUtils.createJMenuItemFrom(selectWays));
     selectionPopupMenu.addSeparator();
     selectionPopupMenu.add(selectInRelationList);
     selectionPopupMenu.add(selectRelations);
@@ -304,25 +297,25 @@ public class ExtendedClipboardDialog extends ToggleDialog implements DataSelecti
     
     listPopupMenu.add(rememberItem);
     listPopupMenu.addSeparator();
-    listPopupMenu.add(createJMenuItemFrom(add));
-    listPopupMenu.add(createJMenuItemFrom(addNew));
-    listPopupMenu.add(createJMenuItemFrom(remove));
-    listPopupMenu.add(createJMenuItemFrom(clear));
-    listPopupMenu.add(createJMenuItemFrom(reverse));
-    listPopupMenu.add(createJMenuItemFrom(reverseAdd));
+    listPopupMenu.add(MenuUtils.createJMenuItemFrom(add));
+    listPopupMenu.add(MenuUtils.createJMenuItemFrom(addNew));
+    listPopupMenu.add(MenuUtils.createJMenuItemFrom(remove));
+    listPopupMenu.add(MenuUtils.createJMenuItemFrom(clear));
+    listPopupMenu.add(MenuUtils.createJMenuItemFrom(reverse));
+    listPopupMenu.add(MenuUtils.createJMenuItemFrom(reverseAdd));
     listPopupMenu.addSeparator();
-    listPopupMenu.add(createJMenuItemFrom(restore));
+    listPopupMenu.add(MenuUtils.createJMenuItemFrom(restore));
     listPopupMenu.addSeparator();
-    listPopupMenu.add(createJMenuItemFrom(selectNodes));
-    listPopupMenu.add(createJMenuItemFrom(selectWays));
+    listPopupMenu.add(MenuUtils.createJMenuItemFrom(selectNodes));
+    listPopupMenu.add(MenuUtils.createJMenuItemFrom(selectWays));
     listPopupMenu.addSeparator();
     listPopupMenu.add(selectInRelationList);
     listPopupMenu.add(selectRelations);
     listPopupMenu.add(selectRelationMembers);
     listPopupMenu.addSeparator();
-    listPopupMenu.add(createJMenuItemFrom(clipboardNew));
-    listPopupMenu.add(createJMenuItemFrom(edit));
-    listPopupMenu.add(createJMenuItemFrom(delete));
+    listPopupMenu.add(MenuUtils.createJMenuItemFrom(clipboardNew));
+    listPopupMenu.add(MenuUtils.createJMenuItemFrom(edit));
+    listPopupMenu.add(MenuUtils.createJMenuItemFrom(delete));
   }
   
   private void updatePopupMenus(boolean isOnEntry) {

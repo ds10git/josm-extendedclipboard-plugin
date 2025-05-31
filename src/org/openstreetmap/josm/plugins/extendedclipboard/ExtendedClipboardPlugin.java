@@ -9,29 +9,31 @@ import org.openstreetmap.josm.plugins.PluginInformation;
  * Collection of utilities
  */
 public class ExtendedClipboardPlugin extends Plugin {
-     private static ExtendedClipboardPlugin instance;
-  
-    private ExtendedClipboardDialog dialog;
-    
-    
-    public ExtendedClipboardPlugin(PluginInformation info) {
-        super(info);
-        instance = this;
-    }
+  private static ExtendedClipboardPlugin instance;
 
-    @Override
-    public void mapFrameInitialized(MapFrame oldFrame, MapFrame newFrame) {
-      if(oldFrame == null && newFrame != null) {
-        dialog = new ExtendedClipboardDialog();
-        newFrame.addToggleDialog(dialog);
-      }
-      else if(oldFrame != null && newFrame == null) {
-        dialog.clear();
-        dialog = null;
-      }
+  private ExtendedClipboardDialog dialog;
+  private NodeTemplateListDialog nodeTemplateDialog;
+
+  public ExtendedClipboardPlugin(PluginInformation info) {
+    super(info);
+    instance = this;
+  }
+
+  @Override
+  public void mapFrameInitialized(MapFrame oldFrame, MapFrame newFrame) {
+    if (oldFrame == null && newFrame != null) {
+      dialog = new ExtendedClipboardDialog();
+      nodeTemplateDialog = new NodeTemplateListDialog();
+      newFrame.addToggleDialog(nodeTemplateDialog);
+      newFrame.addToggleDialog(dialog);
+    } else if (oldFrame != null && newFrame == null) {
+      dialog.clear();
+      dialog = null;
+      nodeTemplateDialog = null;
     }
-    
-    public static final ExtendedClipboardPlugin getInstance() {
-        return instance;
-    }
+  }
+
+  public static final ExtendedClipboardPlugin getInstance() {
+    return instance;
+  }
 }
