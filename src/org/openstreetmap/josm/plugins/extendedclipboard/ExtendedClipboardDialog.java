@@ -4,6 +4,7 @@ package org.openstreetmap.josm.plugins.extendedclipboard;
 import static org.openstreetmap.josm.tools.I18n.tr;
 
 import java.awt.Component;
+import java.awt.Rectangle;
 import java.awt.event.ActionEvent;
 import java.awt.event.InputEvent;
 import java.awt.event.KeyEvent;
@@ -17,6 +18,7 @@ import java.util.Date;
 import java.util.Hashtable;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import javax.swing.AbstractAction;
@@ -31,11 +33,16 @@ import javax.swing.ListSelectionModel;
 import javax.swing.SwingUtilities;
 
 import org.openstreetmap.josm.actions.JosmAction;
+import org.openstreetmap.josm.actions.relation.SelectInRelationListAction;
+import org.openstreetmap.josm.actions.relation.SelectMembersAction;
+import org.openstreetmap.josm.actions.relation.SelectRelationAction;
 import org.openstreetmap.josm.data.osm.DataSelectionListener;
 import org.openstreetmap.josm.data.osm.DataSet;
+import org.openstreetmap.josm.data.osm.Node;
 import org.openstreetmap.josm.data.osm.OsmDataManager;
 import org.openstreetmap.josm.data.osm.OsmPrimitive;
 import org.openstreetmap.josm.data.osm.Relation;
+import org.openstreetmap.josm.data.osm.Way;
 import org.openstreetmap.josm.data.osm.event.SelectionEventManager;
 import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.gui.SideButton;
@@ -69,6 +76,8 @@ public class ExtendedClipboardDialog extends ToggleDialog implements DataSelecti
   private final RestoreAction restore = new RestoreAction();
   private final ClearAction clear = new ClearAction();
   private final DeleteAction delete = new DeleteAction();
+  private final SelectNodesAction selectNodes = new SelectNodesAction();
+  private final SelectWaysAction selectWays = new SelectWaysAction();
   
   /**
    * The Add button (needed to be able to disable it)
@@ -86,6 +95,12 @@ public class ExtendedClipboardDialog extends ToggleDialog implements DataSelecti
   private final JMenuItem rememberItem = new JMenuItem();
   private final AbstractAction remember;
   private final AbstractAction unremember;
+  
+  private final JPopupMenu selectionPopupMenu = new JPopupMenu();
+  
+  private final SelectInRelationListAction selectInRelationList = new SelectInRelationListAction();
+  private final SelectRelationAction selectRelations = new SelectRelationAction(false);
+  private final SelectMembersAction selectRelationMembers = new SelectMembersAction(false);
   
   private boolean iconAddToNewList = true;
   
@@ -131,6 +146,7 @@ public class ExtendedClipboardDialog extends ToggleDialog implements DataSelecti
     };
     
     createListPopupMenu();
+    createSelectionPopupMenu();
     
     clipboard.addListSelectionListener(e -> {
       if(!e.getValueIsAdjusting()) {
@@ -176,7 +192,7 @@ public class ExtendedClipboardDialog extends ToggleDialog implements DataSelecti
             clipboard.clearSelection();
           }
           
-          updateListPopupMenu(index >= 0 && clipboard.getCellBounds(index, index).contains(e.getPoint()));
+          updatePopupMenus(index >= 0 && clipboard.getCellBounds(index, index).contains(e.getPoint()));
           listPopupMenu.show(e.getComponent(), e.getPoint().x, e.getPoint().y);
         }
       }
@@ -268,6 +284,21 @@ public class ExtendedClipboardDialog extends ToggleDialog implements DataSelecti
     return item;
   }
   
+  private void createSelectionPopupMenu() {
+    selectionPopupMenu.add(createJMenuItemFrom(selectNodes));
+    selectionPopupMenu.add(createJMenuItemFrom(selectWays));
+    selectionPopupMenu.addSeparator();
+    selectionPopupMenu.add(selectInRelationList);
+    selectionPopupMenu.add(selectRelations);
+    selectionPopupMenu.add(selectRelationMembers);
+    
+    btnRestore.createArrow(e -> {
+      Rectangle r = btnRestore.getBounds();
+      updatePopupMenus(clipboard.getSelectedIndex() >= 0);
+      selectionPopupMenu.show(btnRestore, r.x, r.height);
+    }, true);
+  }
+  
   private void createListPopupMenu() {
     rememberItem.setAction(remember);
     
@@ -279,33 +310,58 @@ public class ExtendedClipboardDialog extends ToggleDialog implements DataSelecti
     listPopupMenu.add(createJMenuItemFrom(clear));
     listPopupMenu.add(createJMenuItemFrom(reverse));
     listPopupMenu.add(createJMenuItemFrom(reverseAdd));
+    listPopupMenu.addSeparator();
     listPopupMenu.add(createJMenuItemFrom(restore));
+    listPopupMenu.addSeparator();
+    listPopupMenu.add(createJMenuItemFrom(selectNodes));
+    listPopupMenu.add(createJMenuItemFrom(selectWays));
+    listPopupMenu.addSeparator();
+    listPopupMenu.add(selectInRelationList);
+    listPopupMenu.add(selectRelations);
+    listPopupMenu.add(selectRelationMembers);
     listPopupMenu.addSeparator();
     listPopupMenu.add(createJMenuItemFrom(clipboardNew));
     listPopupMenu.add(createJMenuItemFrom(edit));
     listPopupMenu.add(createJMenuItemFrom(delete));
   }
   
-  private void updateListPopupMenu(boolean isOnEntry) {
+  private void updatePopupMenus(boolean isOnEntry) {
     rememberItem.setEnabled(isOnEntry);
     
     if(isOnEntry && clipboard.getSelectedIndex() >= 0) {
-      if(Config.getPref().getList(PREF_NAMES).contains(clipboard.getSelectedValue().getNameOnly())) {
+      ClipboardEntry entry = clipboard.getSelectedValue();
+      
+      if(Config.getPref().getList(PREF_NAMES).contains(entry.getNameOnly())) {
         rememberItem.setAction(unremember);
       }
       else {
         rememberItem.setAction(remember);
       }
+            
+      selectInRelationList.setEnabled(entry.containsRelations());
+      selectRelations.setEnabled(entry.containsRelations());
+      selectRelationMembers.setEnabled(entry.containsRelations());
+      
+      if(entry.containsRelations()) {
+        selectInRelationList.setPrimitives(entry.getRelations());
+        selectRelations.setPrimitives(entry.getRelations());
+        selectRelationMembers.setPrimitives(entry.getRelations());
+      }
+    }
+    else {
+      selectInRelationList.setEnabled(false);
+      selectRelations.setEnabled(false);
+      selectRelationMembers.setEnabled(false);
     }
   }
 
   private void addNewClipboardEntry() {
-    addNewClipboardEntry(null);
+    addNewClipboardEntry(null, null);
     updateBtnEnabledState();
   }
   
-  private ClipboardEntry addNewClipboardEntry(final Collection<OsmPrimitive> selection) {
-    ClipboardEntry entry = new ClipboardEntry(selection == null ? OsmDataManager.getInstance().getActiveDataSet().getSelected() : selection);
+  private ClipboardEntry addNewClipboardEntry(final Collection<OsmPrimitive> selection, String name) {
+    ClipboardEntry entry = new ClipboardEntry(name, selection == null ? OsmDataManager.getInstance().getActiveDataSet().getSelected() : selection);
     model.add(0, entry);
       
     if(model.size() > MAX_MODEL_SIZE) {
@@ -327,6 +383,8 @@ public class ExtendedClipboardDialog extends ToggleDialog implements DataSelecti
     delete.updateEnabledState();
     clear.updateEnabledState();
     remove.updateEnabledState();
+    selectNodes.updateEnabledState();
+    selectWays.updateEnabledState();
     repaintRow(clipboard.getSelectedIndex());
   }
 
@@ -337,7 +395,7 @@ public class ExtendedClipboardDialog extends ToggleDialog implements DataSelecti
   }
   
   private void updateBtnAddIconAndTooltip(DataSet ds, boolean ctrl_down) {
-    if(clipboard != null && model != null) {
+    if(clipboard != null && model != null && ds != null) {
       if((iconAddToNewList && clipboard.getSelectedIndex() >= 0 && !clipboard.getSelectedValue().containsAll(ds.getSelected()))) {
         btnAdd.setIcon(((ImageResource)add.getValue("ImageResource")).getImageIconBounded(ImageProvider.ImageSizes.SIDEBUTTON.getImageDimension()));
         btnAdd.setToolTipText((String)add.getValue(Action.SHORT_DESCRIPTION));
@@ -403,6 +461,10 @@ public class ExtendedClipboardDialog extends ToggleDialog implements DataSelecti
       }
       
       clipboard.setModel(model);
+      
+      if(!model.isEmpty()) {
+        clipboard.setSelectedIndex(0);
+      }
     }
   }
 
@@ -506,21 +568,13 @@ public class ExtendedClipboardDialog extends ToggleDialog implements DataSelecti
       }
       
       if((e.getModifiers() & ActionEvent.CTRL_MASK) == ActionEvent.CTRL_MASK) {
-        final String name = entry.name;
-        
-        entry = addNewClipboardEntry(reverse);
-        entry.name = name;
+        entry = addNewClipboardEntry(reverse, entry.getNameOnly());
       }
       else {
         entry.selection = reverse;
       }
       
-      if(entry.name.endsWith("\u2B07")) {
-        entry.setName(entry.name.substring(0,entry.name.length()-2));
-      }
-      else {
-        entry.setName(entry.name + " \u2B07");
-      }
+      entry.updateReverseState();
       
       updateBtnEnabledState();
       clipboard.repaint();
@@ -665,10 +719,58 @@ public class ExtendedClipboardDialog extends ToggleDialog implements DataSelecti
     }
   }
   
+  class SelectNodesAction extends JosmAction {
+    SelectNodesAction() {
+        super(null, /* ICON() */ "data/node", tr("Select nodes"),/*Shortcut*/ null, false);
+    }
+    
+    @Override
+    public void actionPerformed(ActionEvent e) {
+      clipboard.getSelectedValue().restore(ClipboardEntry.NODES);
+    }
+    
+
+    @Override
+    protected final void updateEnabledState() {
+      setEnabled(clipboard != null && clipboard.getSelectedIndex() >= 0 && clipboard.getSelectedValue().containsNodes());
+    }
+  }
+  
+  class SelectWaysAction extends JosmAction {
+    SelectWaysAction() {
+        super(null, /* ICON() */ "data/way", tr("Select ways"),/*Shortcut*/ null, false);
+    }
+    
+    @Override
+    public void actionPerformed(ActionEvent e) {
+      clipboard.getSelectedValue().restore(ClipboardEntry.WAYS);
+    }
+
+    @Override
+    protected final void updateEnabledState() {
+      setEnabled(clipboard != null && clipboard.getSelectedIndex() >= 0 && clipboard.getSelectedValue().containsWays());
+    }
+  }
+  
   private final static class ClipboardEntry {
+    private static final String NODES = "nodes";
+    private static final String WAYS = "ways";
+    private static final String RELATIONS = "relations";
+    private static final String ALL = "relations";
+    
+    private static final String FORMAT_EXT = " ({1},{2},{3}) ({0})";
+    private static final String FORMAT_EXT_PATTERN =  FORMAT_EXT.replaceAll("\\{\\d{1}\\}", "\\\\d+").replace("(", "\\\\(").replace(")", "\\\\)");
+    private static final String REVERSE_INFO = " \u2B07";
+    
     private LinkedHashSet<OsmPrimitive> selection;
+    
+    private LinkedHashSet<OsmPrimitive> nodes;
+    private LinkedHashSet<OsmPrimitive> ways;
+    private LinkedHashSet<OsmPrimitive> relations;
+    
     private String name;
     private String nameTemplate;
+    private String baseName;
     
     private ClipboardEntry(String name) {
       this(name, null);
@@ -680,6 +782,14 @@ public class ExtendedClipboardDialog extends ToggleDialog implements DataSelecti
     
     private ClipboardEntry(String name, Collection<OsmPrimitive> selection) {
       this.selection = new LinkedHashSet<>();
+      this.nodes = new LinkedHashSet<>();
+      this.ways = new LinkedHashSet<>();
+      this.relations = new LinkedHashSet<>();
+      
+      if(name == null) {
+        name = FORMAT_DATE.format(new Date());
+      }
+      
       setName(name);
       
       if(selection != null) {
@@ -688,7 +798,7 @@ public class ExtendedClipboardDialog extends ToggleDialog implements DataSelecti
     }
     
     public String getNameOnly() {
-      return nameTemplate.replace(" ({0})", "");
+      return baseName;
     }
     
     @Override
@@ -697,7 +807,26 @@ public class ExtendedClipboardDialog extends ToggleDialog implements DataSelecti
     }
     
     private void restore() {
-      OsmDataManager.getInstance().getActiveDataSet().setSelected(selection);
+      restore(ALL);
+    }
+    
+    private void restore(String type) {
+      if(!isEmpty()) {
+        OsmDataManager.getInstance().getActiveDataSet().clearSelection();
+        
+        if(Objects.equals(ALL, type)) {
+          OsmDataManager.getInstance().getActiveDataSet().setSelected(selection);
+        }
+        else if(Objects.equals(RELATIONS, type)) {
+          OsmDataManager.getInstance().getActiveDataSet().setSelected(relations);
+        }
+        else if(Objects.equals(WAYS, type)) {
+          OsmDataManager.getInstance().getActiveDataSet().setSelected(ways);
+        }
+        else if(Objects.equals(NODES, type)) {
+          OsmDataManager.getInstance().getActiveDataSet().setSelected(nodes);
+        }
+      }
     }
     
     private void highlight(boolean value) {
@@ -731,37 +860,88 @@ public class ExtendedClipboardDialog extends ToggleDialog implements DataSelecti
       return false;
     }
     
-    private void setName(String name) {
-      if(name.matches(".*\\(\\d+\\).*")) {
-        nameTemplate = name.replaceAll("\\(\\d+\\)", "({0})");
+    private void updateReverseState() {
+      if(nameTemplate.contains(REVERSE_INFO)) {
+        nameTemplate = baseName+FORMAT_EXT;
       }
       else {
-        nameTemplate = name+" ({0})";
+        nameTemplate = baseName+FORMAT_EXT+REVERSE_INFO;
       }
       
-      if(nameTemplate.contains(" \u2B07")) {
-        nameTemplate = nameTemplate.replace(" \u2B07", "") + " \u2B07";
+      refreshName();
+    }
+    
+    private void setName(String name) {
+      if(name.matches(".*"+FORMAT_EXT_PATTERN+".*")) {
+        baseName = name.replaceAll(FORMAT_EXT_PATTERN, "");
+      }
+      else {
+        baseName = name;
+      }
+      
+      nameTemplate = baseName+FORMAT_EXT;
+      
+      if(nameTemplate.contains(REVERSE_INFO) && !nameTemplate.endsWith(REVERSE_INFO)) {
+        nameTemplate = nameTemplate.replace(REVERSE_INFO, "") + REVERSE_INFO;
       }
       
       refreshName();
     }
     
     private void addAll(Collection<OsmPrimitive> selection) {
-      this.selection.addAll(selection);
+      for(OsmPrimitive s : selection) {
+        if(!this.selection.contains(s)) {
+          this.selection.add(s);
+          
+          if(s instanceof Node) {
+            this.nodes.add(s);
+          }
+          else if(s instanceof Way) {
+            this.ways.add(s);
+          }
+          else if(s instanceof Relation) {
+            this.relations.add(s);
+          }
+        }
+      }
       refreshName();
     }
     
     private void remove(Collection<OsmPrimitive> selection) {
       this.selection.removeAll(selection);
+      this.nodes.removeAll(selection);
+      this.ways.removeAll(selection);
+      this.relations.removeAll(selection);
+      
       refreshName();
     }
     
+    private boolean containsNodes() {
+      return !nodes.isEmpty();
+    }
+        
+    private boolean containsWays() {
+      return !ways.isEmpty();
+    }
+    
+    private boolean containsRelations() {
+      return !relations.isEmpty();
+    }
+    
+    public LinkedHashSet<OsmPrimitive> getRelations() {
+      return relations;
+    }
+    
     private void refreshName() {
-      name = nameTemplate.replace("{0}", String.valueOf(size()));
+      name = nameTemplate.replace("{0}", String.valueOf(size())).replace("{1}", String.valueOf(nodes.size())).replace("{2}", String.valueOf(ways.size())).replace("{3}", String.valueOf(relations.size()));
     }
     
     private void clear() {
       this.selection.clear();
+      this.nodes.clear();
+      this.ways.clear();
+      this.relations.clear();
+      
       refreshName();
     }
     
