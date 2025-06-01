@@ -197,7 +197,7 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
     
     private PresetAction(JMenuItem preset) {      
       parent = preset.getAction();
-      putValue(NAME, parent.getValue(NAME));
+      putValue(NAME, preset.getText());
       putValue(SHORT_DESCRIPTION, parent.getValue(SHORT_DESCRIPTION));
       putValue(SMALL_ICON, parent.getValue(SMALL_ICON));
     }
@@ -476,8 +476,11 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
 
     @Override
     public void actionPerformed(ActionEvent e) {
-      ClipboardUtils.copy(new PrimitiveTransferable(PrimitiveTransferData
-          .getDataWithReferences(Collections.singleton(nodeList.getSelectedValue().createNode()))));
+      NodeTemplate template = nodeList.getSelectedValue();
+      
+      if(template != null) {
+        ClipboardUtils.copy(new PrimitiveTransferable(PrimitiveTransferData.getDataWithReferences(Collections.singleton(template.createNode()))));
+      }
     }
 
     @Override
