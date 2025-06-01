@@ -49,6 +49,7 @@ import org.openstreetmap.josm.gui.SideButton;
 import org.openstreetmap.josm.gui.dialogs.ToggleDialog;
 import org.openstreetmap.josm.gui.layer.MainLayerManager.ActiveLayerChangeEvent;
 import org.openstreetmap.josm.gui.layer.MainLayerManager.ActiveLayerChangeListener;
+import org.openstreetmap.josm.gui.layer.Layer;
 import org.openstreetmap.josm.gui.layer.OsmDataLayer;
 import org.openstreetmap.josm.spi.preferences.Config;
 import org.openstreetmap.josm.tools.ImageProvider;
@@ -82,14 +83,14 @@ public class ExtendedClipboardDialog extends ToggleDialog implements DataSelecti
   /**
    * The Add button (needed to be able to disable it)
    */
-  private final SideButton btnAdd = new SideButton(add);
-  private final SideButton btnRemove = new SideButton(remove);
-  private final SideButton btnNewClipboard = new SideButton(clipboardNew);
-  private final SideButton btnEdit = new SideButton(edit);
-  private final SideButton btnReverse = new SideButton(reverse);
-  private final SideButton btnRestore = new SideButton(restore);
-  private final SideButton btnClear = new SideButton(clear);
-  private final SideButton btnDelete = new SideButton(delete);
+  private final SideButton btnAdd = new SideButton(add, false);
+  private final SideButton btnRemove = new SideButton(remove, false);
+  private final SideButton btnNewClipboard = new SideButton(clipboardNew, false);
+  private final SideButton btnEdit = new SideButton(edit, false);
+  private final SideButton btnReverse = new SideButton(reverse, false);
+  private final SideButton btnRestore = new SideButton(restore, false);
+  private final SideButton btnClear = new SideButton(clear, false);
+  private final SideButton btnDelete = new SideButton(delete, false);
   
   private final JPopupMenu listPopupMenu = new JPopupMenu();
   private final JMenuItem rememberItem = new JMenuItem();
@@ -278,8 +279,8 @@ public class ExtendedClipboardDialog extends ToggleDialog implements DataSelecti
   }
   
   private void createSelectionPopupMenu() {
-    selectionPopupMenu.add(MenuUtils.createJMenuItemFrom(selectNodes));
-    selectionPopupMenu.add(MenuUtils.createJMenuItemFrom(selectWays));
+    selectionPopupMenu.add(selectNodes);
+    selectionPopupMenu.add(selectWays);
     selectionPopupMenu.addSeparator();
     selectionPopupMenu.add(selectInRelationList);
     selectionPopupMenu.add(selectRelations);
@@ -297,25 +298,25 @@ public class ExtendedClipboardDialog extends ToggleDialog implements DataSelecti
     
     listPopupMenu.add(rememberItem);
     listPopupMenu.addSeparator();
-    listPopupMenu.add(MenuUtils.createJMenuItemFrom(add));
-    listPopupMenu.add(MenuUtils.createJMenuItemFrom(addNew));
-    listPopupMenu.add(MenuUtils.createJMenuItemFrom(remove));
-    listPopupMenu.add(MenuUtils.createJMenuItemFrom(clear));
-    listPopupMenu.add(MenuUtils.createJMenuItemFrom(reverse));
-    listPopupMenu.add(MenuUtils.createJMenuItemFrom(reverseAdd));
+    listPopupMenu.add(add);
+    listPopupMenu.add(addNew);
+    listPopupMenu.add(remove);
+    listPopupMenu.add(clear);
+    listPopupMenu.add(reverse);
+    listPopupMenu.add(reverseAdd);
     listPopupMenu.addSeparator();
-    listPopupMenu.add(MenuUtils.createJMenuItemFrom(restore));
+    listPopupMenu.add(restore);
     listPopupMenu.addSeparator();
-    listPopupMenu.add(MenuUtils.createJMenuItemFrom(selectNodes));
-    listPopupMenu.add(MenuUtils.createJMenuItemFrom(selectWays));
+    listPopupMenu.add(selectNodes);
+    listPopupMenu.add(selectWays);
     listPopupMenu.addSeparator();
     listPopupMenu.add(selectInRelationList);
     listPopupMenu.add(selectRelations);
     listPopupMenu.add(selectRelationMembers);
     listPopupMenu.addSeparator();
-    listPopupMenu.add(MenuUtils.createJMenuItemFrom(clipboardNew));
-    listPopupMenu.add(MenuUtils.createJMenuItemFrom(edit));
-    listPopupMenu.add(MenuUtils.createJMenuItemFrom(delete));
+    listPopupMenu.add(clipboardNew);
+    listPopupMenu.add(edit);
+    listPopupMenu.add(delete);
   }
   
   private void updatePopupMenus(boolean isOnEntry) {
@@ -369,6 +370,7 @@ public class ExtendedClipboardDialog extends ToggleDialog implements DataSelecti
   
   private void updateBtnEnabledState() {
     add.updateEnabledState();
+    addNew.updateEnabledState();
     edit.updateEnabledState();
     reverse.updateEnabledState();
     reverseAdd.updateEnabledState();
@@ -433,14 +435,20 @@ public class ExtendedClipboardDialog extends ToggleDialog implements DataSelecti
       model.clear();
     }
   }
-
+  
+  @Override
+  public String helpTopic() {
+    return "Plugin/ExtendedClipboard";
+  }
+  
   @Override
   public void activeOrEditLayerChanged(ActiveLayerChangeEvent e) {
     clipboard.setModel(EMPTY_MODEL);
     model = null;
     OsmDataLayer layer = e.getSource().getActiveDataLayer();
+    Layer activeLayer = e.getSource().getActiveLayer();
     
-    if(layer != null) {
+    if(layer != null && !layer.isLocked() && activeLayer != null && !activeLayer.isBackgroundLayer()) {
       clipboardNew.setEnabled(true);
       model = modelTable.get(layer);
       
@@ -459,6 +467,11 @@ public class ExtendedClipboardDialog extends ToggleDialog implements DataSelecti
         clipboard.setSelectedIndex(0);
       }
     }
+    else {
+      clipboardNew.setEnabled(false);
+    }
+    
+    updateBtnEnabledState();
   }
 
   @Override
@@ -471,7 +484,7 @@ public class ExtendedClipboardDialog extends ToggleDialog implements DataSelecti
   
   class NewClipboardAction extends JosmAction {
     NewClipboardAction() {
-        super(null, /* ICON() */ "addclipboard", tr("Create new clipboard"),/*Shortcut*/ null, false);
+        super(tr("Create new clipboard"), /* ICON() */ "addclipboard", tr("Create new clipboard"),/*Shortcut*/ null, false);
     }
     
     @Override
@@ -482,7 +495,7 @@ public class ExtendedClipboardDialog extends ToggleDialog implements DataSelecti
   
   class EditAction extends JosmAction {
     EditAction() {
-        super(null, /* ICON() */ "dialogs/edit", tr("Edit name of selected clipboard "),/*Shortcut*/ null, false);
+        super(tr("Edit name of selected clipboard "), /* ICON() */ "dialogs/edit", tr("Edit name of selected clipboard "),/*Shortcut*/ null, false);
     }
     
     @Override
@@ -505,7 +518,7 @@ public class ExtendedClipboardDialog extends ToggleDialog implements DataSelecti
   
   class ClearAction extends JosmAction {
     ClearAction() {
-        super(null, /* ICON() */ "purge", tr("Clear selected clipboard"),/*Shortcut*/ null, false);
+        super(tr("Clear selected clipboard"), /* ICON() */ "purge", tr("Clear selected clipboard"),/*Shortcut*/ null, false);
     }
     
     @Override
@@ -523,7 +536,7 @@ public class ExtendedClipboardDialog extends ToggleDialog implements DataSelecti
 
   class DeleteAction extends JosmAction {
     DeleteAction() {
-        super(null, /* ICON() */ "dialogs/delete", tr("Delete selected clipboard"),/*Shortcut*/ null, false);
+        super(tr("Delete selected clipboard"), /* ICON() */ "dialogs/delete", tr("Delete selected clipboard"),/*Shortcut*/ null, false);
     }
     
     @Override
@@ -546,7 +559,7 @@ public class ExtendedClipboardDialog extends ToggleDialog implements DataSelecti
   
   class ReverseAction extends JosmAction {
     ReverseAction() {
-        super(null, /* ICON() */ "dialogs/reverse", tr("Reverse order of objects of selected clipboard"),/*Shortcut*/ null, false);
+        super(tr("Reverse order of objects of selected clipboard"), /* ICON() */ "dialogs/reverse", tr("Reverse order of objects of selected clipboard"),/*Shortcut*/ null, false);
     }
     
     @Override
@@ -582,7 +595,7 @@ public class ExtendedClipboardDialog extends ToggleDialog implements DataSelecti
   
   class ReverseActionAdd extends JosmAction {
     ReverseActionAdd() {
-      super(null, /* ICON() */ "reverseadd", tr("Reverse order of objects of selected clipboard and add them to new clipboard"),/*Shortcut*/ null, false);
+      super(tr("Reverse order of objects of selected clipboard and add them to new clipboard"), /* ICON() */ "reverseadd", tr("Reverse order of objects of selected clipboard and add them to new clipboard"),/*Shortcut*/ null, false);
     }
 
     @Override
@@ -599,7 +612,7 @@ public class ExtendedClipboardDialog extends ToggleDialog implements DataSelecti
   class AddAction extends JosmAction {
     AtomicBoolean isPerforming = new AtomicBoolean(false);
     AddAction() {
-        super(null, /* ICON() */ "dialogs/add", tr("Add current selection to selected clipboard"),
+        super(tr("Add current selection to selected clipboard"), /* ICON() */ "dialogs/add", tr("Add current selection to selected clipboard"),
                 Shortcut.registerShortcut("extendedclipboard.add", tr("Add Selection to Extended Clipboard"), KeyEvent.VK_D,
                         Shortcut.DIRECT), false);
     }
@@ -634,14 +647,14 @@ public class ExtendedClipboardDialog extends ToggleDialog implements DataSelecti
         updateBtnAddIconAndTooltip(ds, false);
         
         setEnabled(ds != null && !ds.isLocked() &&
-                !Utils.isEmpty(OsmDataManager.getInstance().getInProgressSelection()) && !ds.isEmpty() && model != null);
+                !Utils.isEmpty(OsmDataManager.getInstance().getInProgressSelection()) && !ds.isEmpty() && model != null && clipboard.isEnabled());
     }
   }
   
   class AddNewAction extends JosmAction {
     AtomicBoolean isPerforming = new AtomicBoolean(false);
     AddNewAction() {
-        super(null, /* ICON() */ "addnew", tr("Add current selection to new clipboard"),
+        super(tr("Add current selection to new clipboard"), /* ICON() */ "addnew", tr("Add current selection to new clipboard"),
                 Shortcut.registerShortcut("extendedclipboard.addNew", tr("Add Selection to Extended Clipboard as New Entry"), KeyEvent.VK_D,
                         Shortcut.CTRL_SHIFT), false);
     }
@@ -662,14 +675,14 @@ public class ExtendedClipboardDialog extends ToggleDialog implements DataSelecti
     protected final void updateEnabledState() {
         DataSet ds = OsmDataManager.getInstance().getActiveDataSet();
         setEnabled(ds != null && !ds.isLocked() &&
-                !Utils.isEmpty(OsmDataManager.getInstance().getInProgressSelection()) && !ds.isEmpty() && model != null);
+                !Utils.isEmpty(OsmDataManager.getInstance().getInProgressSelection()) && !ds.isEmpty() && model != null && clipboard.isEnabled());
     }
   }
   
   class RemoveAction extends JosmAction {
     AtomicBoolean isPerforming = new AtomicBoolean(false);
     RemoveAction() {
-        super(null, /* ICON() */ "remove", tr("Remove current selection from selected clipboard"),/*Shortcut*/ null, false);
+        super(tr("Remove current selection from selected clipboard"), /* ICON() */ "remove", tr("Remove current selection from selected clipboard"),/*Shortcut*/ null, false);
     }
 
     @Override
@@ -697,7 +710,7 @@ public class ExtendedClipboardDialog extends ToggleDialog implements DataSelecti
   
   class RestoreAction extends JosmAction {
     RestoreAction() {
-        super(null, /* ICON() */ "dialogs/select", tr("Restore the selection of the selected clipboard"),/*Shortcut*/ null, false);
+        super(tr("Restore the selection of the selected clipboard"), /* ICON() */ "dialogs/select", tr("Restore the selection of the selected clipboard"),/*Shortcut*/ null, false);
     }
     
     @Override
@@ -714,7 +727,7 @@ public class ExtendedClipboardDialog extends ToggleDialog implements DataSelecti
   
   class SelectNodesAction extends JosmAction {
     SelectNodesAction() {
-        super(null, /* ICON() */ "data/node", tr("Select nodes"),/*Shortcut*/ null, false);
+        super(tr("Select nodes"), /* ICON() */ "data/node", tr("Select nodes"),/*Shortcut*/ null, false);
     }
     
     @Override
@@ -731,7 +744,7 @@ public class ExtendedClipboardDialog extends ToggleDialog implements DataSelecti
   
   class SelectWaysAction extends JosmAction {
     SelectWaysAction() {
-        super(null, /* ICON() */ "data/way", tr("Select ways"),/*Shortcut*/ null, false);
+        super(tr("Select ways"), /* ICON() */ "data/way", tr("Select ways"),/*Shortcut*/ null, false);
     }
     
     @Override
