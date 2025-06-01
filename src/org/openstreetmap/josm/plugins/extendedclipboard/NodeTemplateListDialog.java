@@ -45,6 +45,7 @@ import org.openstreetmap.josm.data.osm.DataSet;
 import org.openstreetmap.josm.data.osm.Node;
 import org.openstreetmap.josm.data.osm.OsmDataManager;
 import org.openstreetmap.josm.data.osm.OsmPrimitive;
+import org.openstreetmap.josm.data.osm.Tag;
 import org.openstreetmap.josm.data.osm.event.SelectionEventManager;
 import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.gui.SideButton;
@@ -89,7 +90,26 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
 
   private final JPopupMenu popupMenu = new JPopupMenu();
   private final JMenu importMenu = new JMenu(tr("Import node template from preset")); 
-  private final JMenuItem sortItem = new JMenuItem(tr("Sort list alphabetically"), ImageProvider.get("dialogs", "sort", ImageSizes.SMALLICON));
+  private final AbstractAction sortItem = new AbstractAction() {
+    @Override
+    public void actionPerformed(ActionEvent e) {
+      if(nodeList != null) {
+        NodeTemplate selected = nodeList.getSelectedValue();
+        
+        Object[] elements = model.toArray();
+        
+        Arrays.sort(elements, NodeTemplate.COMPARATOR);
+        
+        model.removeAllElements();
+        
+        for(Object el : elements) {
+          model.addElement((NodeTemplate)el);
+        }
+        
+        nodeList.setSelectedValue(selected, true);
+      }
+    }
+  };  
 
   public NodeTemplateListDialog() {
     super(tr("Node Template List"), "nodes", tr("Store node tags for recration of nodes with the same tags"),
@@ -276,22 +296,9 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
   }
   
   private void createPopupMenu() {
-    sortItem.addActionListener(e -> {
-      NodeTemplate selected = nodeList.getSelectedValue();
-      
-      Object[] elements = model.toArray();
-      
-      Arrays.sort(elements, NodeTemplate.COMPARATOR);
-      
-      model.removeAllElements();
-      
-      for(Object el : elements) {
-        model.addElement((NodeTemplate)el);
-      }
-      
-      nodeList.setSelectedValue(selected, true);
-    });
-
+    sortItem.putValue(Action.NAME, tr("Sort list alphabetically"));
+    sortItem.putValue(Action.SMALL_ICON, ImageProvider.get("dialogs", "sort", ImageSizes.SMALLICON));
+    
     popupMenu.add(importMenu);
     popupMenu.add(sortItem);
     popupMenu.add(copy);
@@ -315,7 +322,7 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
   }
 
   private void updateBtnEnabledState() {
-    sortItem.setEnabled(!model.isEmpty() && nodeList.isEnabled());
+    sortItem.setEnabled(model.size() > 1 && nodeList.isEnabled());
     add.updateEnabledState();
     edit.updateEnabledState();
     copy.updateEnabledState();
@@ -348,10 +355,10 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
     super.destroy();
   }
 
-  private void load() {
-    List<String> names = Config.getPref().getList(PREF_KEY_NAMES);
-    List<Map<String, String>> keys = Config.getPref().getListOfMaps(PREF_KEY_KEYS);
-
+  private void load() {    
+    List<String> names = Config.getPref().getList(PREF_KEY_NAMES, null);
+    List<Map<String, String>> keys = Config.getPref().getListOfMaps(PREF_KEY_KEYS, null);
+    
     if (names != null && keys != null) {
       int n = Math.min(names.size(), keys.size());
 
@@ -370,6 +377,20 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
 
         model.addElement(new NodeTemplate(name, iconName, keys.get(i)));
       }
+    }
+    else {
+      final String[] nameArr = {tr("Tree"),tr("Waste Basket"),tr("Bench")};
+      final String[] iconArr = {"presets/landmark/trees_broad_leaved.svg", "presets/service/recycling/waste_basket.svg", "presets/leisure/bench.svg"};
+      final Tag[] tags = {new Tag("natural", "tree"), new Tag("amenity", "waste_basket"), new Tag("amenity", "bench")};
+      
+      for(int i = 0; i < tags.length; i++) {
+        LinkedHashMap<String, String> map = new LinkedHashMap<>();
+        map.put(tags[i].getKey(), tags[i].getValue());
+        
+        model.addElement(new NodeTemplate(nameArr[i], iconArr[i], map));
+      }
+      
+      sortItem.actionPerformed(null);
     }
   }
 
