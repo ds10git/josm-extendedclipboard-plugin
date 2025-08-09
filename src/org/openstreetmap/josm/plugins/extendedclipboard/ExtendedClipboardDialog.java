@@ -47,9 +47,9 @@ import org.openstreetmap.josm.data.osm.event.SelectionEventManager;
 import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.gui.SideButton;
 import org.openstreetmap.josm.gui.dialogs.ToggleDialog;
+import org.openstreetmap.josm.gui.layer.Layer;
 import org.openstreetmap.josm.gui.layer.MainLayerManager.ActiveLayerChangeEvent;
 import org.openstreetmap.josm.gui.layer.MainLayerManager.ActiveLayerChangeListener;
-import org.openstreetmap.josm.gui.layer.Layer;
 import org.openstreetmap.josm.gui.layer.OsmDataLayer;
 import org.openstreetmap.josm.spi.preferences.Config;
 import org.openstreetmap.josm.tools.ImageProvider;
@@ -608,6 +608,31 @@ public class ExtendedClipboardDialog extends ToggleDialog implements DataSelecti
       setEnabled(clipboard != null && clipboard.getSelectedIndex() >= 0 && clipboard.getSelectedValue().size() > 1);
     }
   }
+  
+  /*class AngleAction extends JosmAction {
+    public AngleAction() {
+      super(tr("Get angle from statusbar"),  "dialogs/add", tr("Get angle from statusbar"),
+          Shortcut.registerShortcut("extendedclipboard.angle", tr("Get angle"), KeyEvent.VK_H,
+                  Shortcut.DIRECT), false);
+    }
+
+    @Override
+    public void actionPerformed(ActionEvent e) {
+      Collection<Node> nodes = OsmDataManager.getInstance().getActiveDataSet().getSelectedNodes();
+      
+      if(nodes.size() == 1) {
+        String text = ((JLabel)((JComponent)MainApplication.getMap().statusLine.getComponent(2)).getComponent(1)).getText();
+        
+        if(!text.isBlank()) {
+          try {
+            nodes.forEach(n -> n.put("direction", String.valueOf(Math.round(Float.parseFloat(text.substring(0,text.length()-2).strip().replace(",", "."))))));
+          }catch(NumberFormatException nfe) {
+            nfe.printStackTrace();
+          }
+        }
+      }
+    }
+  }*/
   
   class AddAction extends JosmAction {
     AtomicBoolean isPerforming = new AtomicBoolean(false);
