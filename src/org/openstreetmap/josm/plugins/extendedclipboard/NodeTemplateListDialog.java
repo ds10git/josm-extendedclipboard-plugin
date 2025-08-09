@@ -324,7 +324,13 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
       @Override
       public void propertyChange(PropertyChangeEvent evt) {
         if(panelBounds == null || !panelBounds.equals(p.getBounds())) {
-          SwingUtilities.invokeLater(() -> refillLists());
+          if(model2.isEmpty()) {
+            west.setPreferredSize(new Dimension(p.getWidth(),10));
+          }
+          else {
+            west.setPreferredSize(new Dimension((p.getWidth()-middle.getWidth())/2,10));
+            east.setPreferredSize(west.getPreferredSize());
+          }
         }
       }
     });
@@ -334,78 +340,82 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
     load();
   }
   
-  private void refillLists() {
-    boolean visible = false;
-    
-    if(Config.getPref().getBoolean(PREF_KEY_DUAL_LIST, true)) {
-      int entryCount = model.size() + model2.size();
-      int split = nodeList.getVisibleRowCount();
+  private synchronized void refillLists() {
+    if(panelBounds == null || !panelBounds.equals(p.getBounds())) {
+      boolean visible = false;
       
-      Rectangle a = nodeList.getVisibleRect();
-      
-      if(model.size() > 0) {      
-        split = a.height/nodeList.getCellBounds(0, 0).height;
-      }
-      
-      if(entryCount > split) {
-        DefaultListModel<NodeTemplate> m1 = new DefaultListModel<NodeTemplate>();
-        DefaultListModel<NodeTemplate> m2 = new DefaultListModel<NodeTemplate>();
+      if(Config.getPref().getBoolean(PREF_KEY_DUAL_LIST, true)) {
+        int entryCount = model.size() + model2.size();
+        int split = nodeList.getVisibleRowCount();
         
-        int n = split;
+        Rectangle a = nodeList.getVisibleRect();
         
-        if(entryCount >= split*2) {
-          n = entryCount / 2;
+        if(model.size() > 0) {      
+          split = a.height/nodeList.getCellBounds(0, 0).height;
+        }
+        
+        if(entryCount > split) {
+          DefaultListModel<NodeTemplate> m1 = new DefaultListModel<NodeTemplate>();
+          DefaultListModel<NodeTemplate> m2 = new DefaultListModel<NodeTemplate>();
           
-          if(entryCount % 2 != 0) {
-            n++;
-          }
-        }
+          int n = split;
           
-        for(int i = 0; i < model.size(); i++) {
-          if(n > 0) {
-            m1.addElement(model.get(i));
-            n--;
+          if(entryCount >= split*2) {
+            n = entryCount / 2;
+            
+            if(entryCount % 2 != 0) {
+              n++;
+            }
           }
-          else {
-            m2.addElement(model.get(i));
+            
+          for(int i = 0; i < model.size(); i++) {
+            if(n > 0) {
+              m1.addElement(model.get(i));
+              n--;
+            }
+            else {
+              m2.addElement(model.get(i));
+            }
           }
+          
+          for(int i = 0; i < model2.size(); i++) {
+            if(n > 0) {
+              m1.addElement(model2.get(i));
+              n--;
+            }
+            else {
+              m2.addElement(model2.get(i));
+            }
+          }
+          
+          model = m1;
+          model2 = m2;
+          
+          nodeList.setModel(model);
+          nodeList2.setModel(model2);
+          
+          west.setPreferredSize(new Dimension((p.getWidth()-middle.getWidth())/2,10));
+          east.setPreferredSize(west.getPreferredSize());
+          visible = true;
         }
-        
-        for(int i = 0; i < model2.size(); i++) {
-          if(n > 0) {
-            m1.addElement(model2.get(i));
-            n--;
-          }
-          else {
-            m2.addElement(model2.get(i));
-          }
-        }
-        
-        model = m1;
-        model2 = m2;
-        
-        nodeList.setModel(model);
-        nodeList2.setModel(model2);
-        
-        west.setPreferredSize(new Dimension((p.getWidth()-middle.getWidth())/2,10));
-        east.setPreferredSize(west.getPreferredSize());
-        visible = true;
-      }
-    }
-    
-    middle.setVisible(visible);
-    east.setVisible(visible);
-    
-    if(!visible) {
-      if(!model2.isEmpty()) {
-        model.addElement(model2.get(0));
-        model2.clear();
       }
       
-      west.setPreferredSize(new Dimension(p.getWidth(),10));
+      middle.setVisible(visible);
+      east.setVisible(visible);
+      
+      if(!visible) {
+        if(!model2.isEmpty()) {
+          for(int i = 0; i < model2.size(); i++) {
+            model.addElement(model2.get(i));
+          }
+          model2.clear();
+        }
+        
+        west.setPreferredSize(new Dimension(p.getWidth(),10));
+      }
+      
+      panelBounds = p.getBounds();
     }
-    
-    panelBounds = p.getBounds();
   }
   
   private class PresetAction extends AbstractAction {
