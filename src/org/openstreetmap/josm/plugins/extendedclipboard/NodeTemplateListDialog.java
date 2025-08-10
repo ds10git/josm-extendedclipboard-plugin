@@ -313,24 +313,19 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
     p.add(middle);
     p.add(east);
     
-    p.addComponentListener(new ComponentAdapter() {
+    west.addComponentListener(new ComponentAdapter() {
       @Override
       public void componentResized(ComponentEvent e) {
         refillLists();
       }
     });
     
-    p.addPropertyChangeListener(new PropertyChangeListener() {
+    p.addPropertyChangeListener("ancestor", new PropertyChangeListener() {
       @Override
       public void propertyChange(PropertyChangeEvent evt) {
-        if(panelBounds == null || !panelBounds.equals(p.getBounds())) {
-          if(model2.isEmpty()) {
-            west.setPreferredSize(new Dimension(p.getWidth(),10));
-          }
-          else {
-            west.setPreferredSize(new Dimension((p.getWidth()-middle.getWidth())/2,10));
-            east.setPreferredSize(west.getPreferredSize());
-          }
+        if(evt.getNewValue() != null && (panelBounds == null || !panelBounds.equals(p.getBounds()))) {
+          west.setPreferredSize(new Dimension(p.getWidth(),10));
+          east.setPreferredSize(west.getPreferredSize());
         }
       }
     });
