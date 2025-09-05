@@ -110,7 +110,8 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
   private final SideButton btnDelete = new SideButton(delete, false);
 
   private final JPopupMenu popupMenu = new JPopupMenu();
-  private final JMenu importMenu = new JMenu(tr("Import node template from preset")); 
+  private final JMenu importMenu = new JMenu(tr("Import node template from preset"));
+  private final JMenu setIconMenu = new JMenu(tr("Set icon for selected node template from preset"));
   
   private PreferenceChangedListener prefListener;
   
@@ -143,7 +144,7 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
           model.addElement((NodeTemplate)el);
         }
         
-        refillLists();
+        refillLists(true);
         
         if(model.contains(selected)) {
           nodeList.setSelectedValue(selected, true);
@@ -336,7 +337,11 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
   }
   
   private synchronized void refillLists() {
-    if(panelBounds == null || !panelBounds.equals(p.getBounds())) {
+    refillLists(false);
+  }
+  
+  private synchronized void refillLists(boolean force) {
+    if(force || panelBounds == null || !panelBounds.equals(p.getBounds())) {
       boolean visible = false;
       
       if(Config.getPref().getBoolean(PREF_KEY_DUAL_LIST, true)) {
@@ -413,6 +418,34 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
     }
   }
   
+  private class IconAction extends AbstractAction {
+    private String iconName;
+    
+    private IconAction(JMenuItem preset) {      
+      Action parent = preset.getAction();
+      iconName = ((TaggingPreset)parent).iconName;
+      putValue(NAME, preset.getText());
+      putValue(SHORT_DESCRIPTION, parent.getValue(SHORT_DESCRIPTION));
+      putValue(SMALL_ICON, parent.getValue(SMALL_ICON));
+    }
+    
+    @Override
+    public void actionPerformed(ActionEvent e) {
+      NodeTemplate n = nodeList.getSelectedValue();
+      
+      if(n == null) {
+        n = nodeList2.getSelectedValue();
+      }
+      
+      if(n != null) {
+        n.iconName = iconName;
+        n.loadIcon();
+        nodeList.repaint();
+        nodeList2.repaint();;
+      }
+    }
+  }
+  
   private class PresetAction extends AbstractAction {
     private Action parent;
     
@@ -464,7 +497,7 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
     }
   }
   
-  private JMenu createPresetMenu(JMenu parent, JMenu menu) {
+  private JMenu createPresetMenu(JMenu parent, JMenu parent2, JMenu menu) {
     Component[] subMenus = menu.getMenuComponents();
     for(Component subMenu : subMenus) {
       if(subMenu instanceof JMenu) {
@@ -472,17 +505,21 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
         sub.setText(((JMenu) subMenu).getText());
         sub.setIcon(((JMenu) subMenu).getIcon());
         
-        createPresetMenu(sub, (JMenu)subMenu);
-        sub.setText(((JMenu) subMenu).getText());
-        sub.setIcon(((JMenu) subMenu).getIcon());
+        JMenu sub2 = new JMenu();
+        sub2.setText(((JMenu) subMenu).getText());
+        sub2.setIcon(((JMenu) subMenu).getIcon());
+        
+        createPresetMenu(sub, sub2, (JMenu)subMenu);
         
         if(sub.getMenuComponentCount() > 0) {
           parent.add(sub);
+          parent2.add(sub2);
         }
       }
       else if(subMenu instanceof Separator) {
         if(parent.getMenuComponentCount() > 0) {
           parent.addSeparator();
+          parent2.addSeparator();
         }
       }
       else if(subMenu instanceof JMenuItem) {
@@ -490,6 +527,7 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
         
         if(a instanceof TaggingPreset && ((TaggingPreset) a).types != null && ((TaggingPreset) a).types.contains(TaggingPresetType.NODE)) {
           parent.add(new PresetAction((JMenuItem)subMenu));
+          parent2.add(new IconAction((JMenuItem)subMenu));
         }
       }
     }
@@ -499,8 +537,9 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
   
   private void updateImportMenu() {
     importMenu.removeAll();
+    setIconMenu.removeAll();
     
-    createPresetMenu(importMenu, MainApplication.getMenu().presetsMenu);
+    createPresetMenu(importMenu, setIconMenu, MainApplication.getMenu().presetsMenu);
   }
   
   private void createPopupMenu() {
@@ -508,6 +547,7 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
     sortItem.putValue(Action.SMALL_ICON, ImageProvider.get("dialogs", "sort", ImageSizes.SMALLICON));
     
     popupMenu.add(importMenu);
+    popupMenu.add(setIconMenu);
     popupMenu.add(sortItem);
     popupMenu.add(copy);
     popupMenu.add(edit);
