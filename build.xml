@@ -27,7 +27,7 @@
 	<property name="de.plugin.description" value="Stellt eine Liste mit bis zu 10 Zwischenablagen zum Abspeichern mehrerer Auswahlen zur Verfügung. Erlaubt Speicherung von Punktevorlagen."/>
     <property name="plugin.icon" value="images/dialogs/extendedclipboard.svg"/>
     <property name="plugin.canloadatruntime" value="false"/>
-<!--    <property name="plugin.link" value="..."/> -->
+    <property name="plugin.link" value="https://josm.openstreetmap.de/wiki/Help/Plugin/ExtendedClipboard"/>
     <!--<property name="plugin.early" value="..."/>-->
     <!--<property name="plugin.requires" value="..."/>-->
     <!--<property name="plugin.stage" value="..."/>-->

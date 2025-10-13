@@ -6,6 +6,7 @@ import static org.openstreetmap.josm.tools.I18n.tr;
 import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.Graphics;
+import java.awt.GridBagLayout;
 import java.awt.Rectangle;
 import java.awt.event.ActionEvent;
 import java.awt.event.ComponentAdapter;
@@ -72,18 +73,20 @@ import org.openstreetmap.josm.gui.tagging.presets.TaggingPreset;
 import org.openstreetmap.josm.gui.tagging.presets.TaggingPresetType;
 import org.openstreetmap.josm.spi.preferences.Config;
 import org.openstreetmap.josm.spi.preferences.PreferenceChangedListener;
+import org.openstreetmap.josm.tools.GBC;
 import org.openstreetmap.josm.tools.ImageProvider;
 import org.openstreetmap.josm.tools.ImageProvider.ImageSizes;
 import org.openstreetmap.josm.tools.Shortcut;
 import org.openstreetmap.josm.tools.Utils;
 
-
 public class NodeTemplateListDialog extends ToggleDialog implements DataSelectionListener, ActiveLayerChangeListener {
   private static final String PREF_KEY_NAMES = "NodeTemplateListDialog.nodeTemplates.names";
   private static final String PREF_KEY_KEYS = "NodeTemplateListDialog.nodeTemplates.keys";
   private static final String PREF_KEY_DUAL_LIST = "NodeTemplateListDialog.nodeTemplates.dualList";
+  
   private static final String SEPARATOR_NAME = ";;;";
   private static final String SEPARATOR_ICON = "###";
+  
   private static final NodeTemplate NODE_TEMPLATE_DUMMY = new NodeTemplate("", null, Collections.emptyMap());
 
   private Rectangle panelBounds;
@@ -300,7 +303,7 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
     nodeList.addListSelectionListener(selectionListener);
     nodeList2.addListSelectionListener(selectionListener);
     
-    p = new JPanel();
+    p = new JPanel(new GridBagLayout());
     p.setLayout(new BoxLayout(p, BoxLayout.X_AXIS));
     
     west = new JScrollPane(nodeList);
@@ -310,9 +313,9 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
     
     middle = new JSeparator(JSeparator.VERTICAL);
     
-    p.add(west);
-    p.add(middle);
-    p.add(east);
+    p.add(west, GBC.std(1, 1));
+    p.add(middle, GBC.std(2, 1));
+    p.add(east, GBC.std(3, 1));
     
     west.addComponentListener(new ComponentAdapter() {
       @Override
@@ -325,13 +328,26 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
       @Override
       public void propertyChange(PropertyChangeEvent evt) {
         if(evt.getNewValue() != null && (panelBounds == null || !panelBounds.equals(p.getBounds()))) {
-          west.setPreferredSize(new Dimension(p.getWidth(),10));
+          west.setPreferredSize(new Dimension((p.getWidth()-middle.getPreferredSize().width)/2,10));
           east.setPreferredSize(west.getPreferredSize());
         }
       }
     });
-    
+        
     createLayout(p, false, Arrays.asList(this.btnAdd, this.btnCopy, this.btnPaste, this.btnEdit, this.btnDelete));
+    
+    p.addComponentListener(new ComponentAdapter() {
+      @Override
+      public void componentResized(ComponentEvent e) {
+        int width = (p.getWidth()-middle.getPreferredSize().width)/2;
+        
+        if(west.getPreferredSize().width != width || panelBounds == null || !panelBounds.equals(p.getBounds())) {
+          west.setPreferredSize(new Dimension(width, 10));
+          east.setPreferredSize(west.getPreferredSize());
+          p.revalidate();
+        }
+      }
+    });
     
     load();
   }
@@ -394,7 +410,7 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
           nodeList.setModel(model);
           nodeList2.setModel(model2);
           
-          west.setPreferredSize(new Dimension((p.getWidth()-middle.getWidth())/2,10));
+          west.setPreferredSize(new Dimension((p.getWidth()-middle.getPreferredSize().width)/2,10));
           east.setPreferredSize(west.getPreferredSize());
           visible = true;
         }
@@ -670,6 +686,13 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
 
       keysList.add(keysMap);
     }
+  }
+  
+  @Override
+  public void collapse() {
+    super.collapse();
+    
+    revalidate();
   }
   
   private void save() {
