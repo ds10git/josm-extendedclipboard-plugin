@@ -28,7 +28,6 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -54,7 +53,11 @@ import javax.swing.JScrollPane;
 import javax.swing.JSeparator;
 import javax.swing.ListSelectionModel;
 import javax.swing.SwingUtilities;
+import javax.swing.event.AncestorEvent;
+import javax.swing.event.AncestorListener;
 import javax.swing.event.ListSelectionListener;
+import javax.swing.event.PopupMenuEvent;
+import javax.swing.event.PopupMenuListener;
 
 import org.openstreetmap.josm.actions.AbstractPasteAction;
 import org.openstreetmap.josm.actions.JosmAction;
@@ -96,21 +99,20 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
   private static final String PREF_KEY_NAMES = "NodeTemplateListDialog.nodeTemplates.names";
   private static final String PREF_KEY_KEYS = "NodeTemplateListDialog.nodeTemplates.keys";
   private static final String PREF_KEY_DUAL_LIST = "NodeTemplateListDialog.nodeTemplates.dualList";
-  private static final String PREF_KEY_USE_ON_SELECTION = "NodeTemplateListDialog.nodeTemplates.useOnSelection";
+  private static final String PREF_KEY_AUTO_TAG_SELECTION = "NodeTemplateListDialog.nodeTemplates.autoTagSelection";
+  private static final String PREF_KEY_TAG_SELECTION = "NodeTemplateListDialog.nodeTemplates.tagSelection";
   private static final String PREF_KEY_SELECTION_AUTO_OFF = "NodeTemplateListDialog.nodeTemplates.useOnSelectionAutoOff";
   
   private static final String SEPARATOR_NAME = ";;;";
   private static final String SEPARATOR_ICON = "###";
   private static final String SEPARATOR_WAY = "***";
-  
-  private static final NodeTemplate NODE_TEMPLATE_DUMMY = new NodeTemplate("", null, Collections.emptyMap(), false, false);
 
   private Rectangle panelBounds;
   private JPanel p;
   private JScrollPane west;
   private JScrollPane east;
   private JSeparator middle;
-  private JCheckBox useOnSelection;
+  private JCheckBox autoTagSelection;
   
   private final JList<NodeTemplate> nodeList;
   private final JList<NodeTemplate> nodeList2;
@@ -141,6 +143,10 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
   private int timer;
   private Thread autoOffTimer;
   private JLabel autoOffLabel;
+  
+  private boolean autoTagDisabled;
+  
+  private JPopupMenu prefMenu;
   
   private final AbstractAction sortItem = new AbstractAction() {
     @Override
@@ -288,10 +294,12 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
               
               SwingUtilities.invokeLater(() -> {
                 if (SwingUtilities.isLeftMouseButton(e) && (knownClickCount.get() >= 1 && knownClickCount.get() <= 3)) {
-                  if(knownClickCount.get() == 1 && Config.getPref().getBoolean(PREF_KEY_USE_ON_SELECTION, true)) {
+                  if(knownClickCount.get() == 1 && Config.getPref().getBoolean(PREF_KEY_AUTO_TAG_SELECTION, true)) {
                     if(nodeList.getSelectedIndex() != -1 || nodeList2.getSelectedIndex() != -1) {
-                      if(!useOnSelection.isSelected()) {
-                        useOnSelection.setSelected(true);
+                      handleSelection(MainApplication.getLayerManager().getEditDataSet().getSelected(), Config.getPref().getBoolean(PREF_KEY_TAG_SELECTION, true));
+                      
+                      if(!autoTagSelection.isSelected()) {
+                        autoTagSelection.setSelected(true);
                       }
                       else {
                         checkStartTimer();
@@ -300,11 +308,11 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
                   }
                   else if(knownClickCount.get() == 2) {
                     copy.actionPerformed(null);
-                    useOnSelection.setSelected(false);
+                    autoTagSelection.setSelected(false);
                   }
                   else if(knownClickCount.get() == 3) {
                     paste.actionPerformed(new ActionEvent(btnPaste, 0, "PASTE"));
-                    useOnSelection.setSelected(false);
+                    autoTagSelection.setSelected(false);
                   }
                   
                   MainApplication.getMainPanel().requestFocusInWindow();
@@ -324,9 +332,9 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
             if(index >= 0 && ((JList<?>)e.getSource()).getCellBounds(index, index).contains(e.getPoint())) {
               ((JList<?>)e.getSource()).setSelectedIndex(index);
               
-              if(Config.getPref().getBoolean(PREF_KEY_USE_ON_SELECTION, true)) {
-                useOnSelection.setEnabled(true);
-                useOnSelection.setSelected(true);
+              if(Config.getPref().getBoolean(PREF_KEY_AUTO_TAG_SELECTION, true)) {
+                autoTagSelection.setEnabled(true);
+                autoTagSelection.setSelected(true);
               }
             }
             else {
@@ -335,6 +343,9 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
             
             updateImportMenu();
             updateBtnEnabledState();
+            
+            forWays.setEnabled(((JList<?>)e.getSource()).getSelectedIndex() != -1);
+            notForNodes.setEnabled(((JList<?>)e.getSource()).getSelectedIndex() != -1);
             
             if(nodeList.getSelectedIndex() != -1) {
               forWays.setSelected(nodeList.getSelectedValue().isForWays());
@@ -369,26 +380,26 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
       }
       
       if(nodeList.getSelectedIndex() == -1 && nodeList2.getSelectedIndex() == -1) {
-        useOnSelection.setSelected(false);
-        useOnSelection.setEnabled(false);
+        autoTagSelection.setSelected(false);
+        autoTagSelection.setEnabled(false);
       }
       else {
-        useOnSelection.setEnabled(true);
+        autoTagSelection.setEnabled(true);
       }
     };
     
     nodeList.addListSelectionListener(selectionListener);
     nodeList2.addListSelectionListener(selectionListener);
     
-    useOnSelection = new JCheckBox(tr("Use on selection"));
-    useOnSelection.setToolTipText(tr("If activated selected template is automatically used on the selection in the map view, if single object is selected."));
-    useOnSelection.setEnabled(false);
-    useOnSelection.addItemListener(e -> {
+    autoTagSelection = new JCheckBox(tr("Auto tag selection"));
+    autoTagSelection.setToolTipText(tr("If activated tags of selected template are automatically added to selected objects in the map view."));
+    autoTagSelection.setEnabled(false);
+    autoTagSelection.addItemListener(e -> {
       if(e.getStateChange() == ItemEvent.SELECTED) {
         checkStartTimer();
       }
       
-      if((nodeList.getSelectedIndex() == -1 && nodeList2.getSelectedIndex() == -1) || !useOnSelection.isSelected()) {
+      if((nodeList.getSelectedIndex() == -1 && nodeList2.getSelectedIndex() == -1) || !autoTagSelection.isSelected()) {
         timer = 0;
       }
     });
@@ -402,13 +413,13 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
     
     middle = new JSeparator(JSeparator.VERTICAL);
     
-    autoOffLabel = new JLabel(tr("off in {0} seconds"));
+    autoOffLabel = new JLabel(tr("for {0} seconds"));
     autoOffLabel.setVisible(false);
     
     JPanel selection = new JPanel(new BorderLayout(10, 0));
-    selection.add(useOnSelection, BorderLayout.CENTER);
+    selection.add(autoTagSelection, BorderLayout.WEST);
     selection.add(autoOffLabel, BorderLayout.EAST);
-    useOnSelection.setVisible(Config.getPref().getBoolean(PREF_KEY_USE_ON_SELECTION, true));
+    autoTagSelection.setVisible(Config.getPref().getBoolean(PREF_KEY_AUTO_TAG_SELECTION, true));
     
     prefListener = e -> {
       if(!Boolean.parseBoolean((String)e.getNewValue().getValue())) {
@@ -424,7 +435,6 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
     };
     
     prefListener2 = e -> {
-      
       if(Boolean.parseBoolean((String)e.getNewValue().getValue())) {
         selection.setVisible(true);
       }
@@ -436,9 +446,9 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
     };
     
     p.add(selection, GBC.std(1,1).span(3).fill(GBC.HORIZONTAL));
-    p.add(west, GBC.std(1, 2).fill(GBC.VERTICAL));
+    p.add(west, GBC.std(1, 2).fill());
     p.add(middle, GBC.std(2, 2).fill(GBC.VERTICAL));
-    p.add(east, GBC.std(3, 2).fill(GBC.VERTICAL));
+    p.add(east, GBC.std(3, 2).fill());
     
     west.addComponentListener(new ComponentAdapter() {
       @Override
@@ -458,66 +468,110 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
     });
         
     createLayout(p, false, Arrays.asList(this.btnAdd, this.btnCopy, this.btnPaste, this.btnEdit, this.btnDelete));
+    p.addAncestorListener(new AncestorListener() {      
+      @Override
+      public void ancestorRemoved(AncestorEvent arg0) {}
+      @Override
+      public void ancestorMoved(AncestorEvent arg0) {}
+      @Override
+      public void ancestorAdded(AncestorEvent arg0) {
+        refillLists();
+        p.removeAncestorListener(this);
+      }
+    });
     
     for(int i = 0; i < titleBar.getComponentCount(); i++) {
       if(titleBar.getComponent(i) instanceof JPanel) {
         JButton settings = new JButton(ImageProvider.get("preference", ImageProvider.ImageSizes.SMALLICON));
         settings.setBorder(BorderFactory.createEmptyBorder());
         settings.addActionListener(e -> {
-          JPopupMenu menu = new JPopupMenu();
+          JPopupMenu m = prefMenu;
           
-          JCheckBoxMenuItem item = new JCheckBoxMenuItem(tr("Dual list"));
-          item.setSelected(Config.getPref().getBoolean(PREF_KEY_DUAL_LIST, true));
-          item.addActionListener(a -> Config.getPref().putBoolean(PREF_KEY_DUAL_LIST, !Config.getPref().getBoolean(PREF_KEY_DUAL_LIST, true)));
-          
-          menu.add(item);
-          
-          item = new JCheckBoxMenuItem(tr("Use on selection"));
-          item.setSelected(Config.getPref().getBoolean(PREF_KEY_USE_ON_SELECTION, true));
-          item.addActionListener(a -> Config.getPref().putBoolean(PREF_KEY_USE_ON_SELECTION, !Config.getPref().getBoolean(PREF_KEY_USE_ON_SELECTION, true)));
-          
-          menu.add(item);
-          
-          JMenu autoOff = new JMenu(tr("Auto off timer for selection"));
-          
-          int timer = Config.getPref().getInt(PREF_KEY_SELECTION_AUTO_OFF, 10);
-          
-          ActionListener timerAction = ta -> {
-            String value = ((JCheckBoxMenuItem)ta.getSource()).getText();
+          if(m != null) {
+            m.setVisible(false);
+          }
+          else {
+            prefMenu = new JPopupMenu();
+            prefMenu.addPopupMenuListener(new PopupMenuListener() {
+              @Override
+              public void popupMenuWillBecomeVisible(PopupMenuEvent e) {}
+              @Override
+              public void popupMenuWillBecomeInvisible(PopupMenuEvent e) {
+                new Thread() {
+                  public void run() {
+                    try {
+                      Thread.sleep(500);
+                    } catch (InterruptedException e) {
+                      // ignore
+                    }
+                    
+                    prefMenu = null;
+                  }
+                }.start();
+              }
+              @Override
+              public void popupMenuCanceled(PopupMenuEvent e) {}
+            });
             
-            int toSet = 0;
+            JCheckBoxMenuItem item = new JCheckBoxMenuItem(tr("Dual list"));
+            item.setSelected(Config.getPref().getBoolean(PREF_KEY_DUAL_LIST, true));
+            item.addActionListener(a -> Config.getPref().putBoolean(PREF_KEY_DUAL_LIST, !Config.getPref().getBoolean(PREF_KEY_DUAL_LIST, true)));
             
-            if(value.matches("\\d+")) {
-              toSet = Integer.parseInt(value);
-            } 
+            prefMenu.add(item);
             
-            Config.getPref().putInt(PREF_KEY_SELECTION_AUTO_OFF, toSet);
+            item = new JCheckBoxMenuItem(tr("Auto tag selected objects from template"));
+            item.setSelected(Config.getPref().getBoolean(PREF_KEY_AUTO_TAG_SELECTION, true));
+            item.addActionListener(a -> Config.getPref().putBoolean(PREF_KEY_AUTO_TAG_SELECTION, !Config.getPref().getBoolean(PREF_KEY_AUTO_TAG_SELECTION, true)));
             
-            if(useOnSelection.isSelected()) {
-              checkStartTimer();
-            }
-          };
-          
-          JCheckBoxMenuItem timerOff = new JCheckBoxMenuItem(tr("disabled"), timer == 0);
-          timerOff.addActionListener(timerAction);
-          JCheckBoxMenuItem timer5 = new JCheckBoxMenuItem("5", timer == 5);
-          timer5.addActionListener(timerAction);
-          JCheckBoxMenuItem timer10 = new JCheckBoxMenuItem("10", timer == 10);
-          timer10.addActionListener(timerAction);
-          JCheckBoxMenuItem timer20 = new JCheckBoxMenuItem("20", timer == 20);
-          timer20.addActionListener(timerAction);
-          JCheckBoxMenuItem timer30 = new JCheckBoxMenuItem("30", timer == 30);
-          timer30.addActionListener(timerAction);
-          
-          autoOff.add(timerOff);
-          autoOff.add(timer5);
-          autoOff.add(timer10);
-          autoOff.add(timer20);
-          autoOff.add(timer30);
-          
-          menu.add(autoOff);
-          
-          menu.show((JButton)e.getSource(), ((JButton)e.getSource()).getWidth(), ((JButton)e.getSource()).getHeight());
+            prefMenu.add(item);
+            
+            item = new JCheckBoxMenuItem(tr("Add tags to selected objects when selecting template"));
+            item.setSelected(Config.getPref().getBoolean(PREF_KEY_TAG_SELECTION, true));
+            item.addActionListener(a -> Config.getPref().putBoolean(PREF_KEY_TAG_SELECTION, !Config.getPref().getBoolean(PREF_KEY_TAG_SELECTION, true)));
+            
+            prefMenu.add(item);
+            
+            JMenu autoOff = new JMenu(tr("Auto off timer for selection"));
+            
+            int timer = Config.getPref().getInt(PREF_KEY_SELECTION_AUTO_OFF, 10);
+            
+            ActionListener timerAction = ta -> {
+              String value = ((JCheckBoxMenuItem)ta.getSource()).getText();
+              
+              int toSet = 0;
+              
+              if(value.matches("\\d+")) {
+                toSet = Integer.parseInt(value);
+              } 
+              
+              Config.getPref().putInt(PREF_KEY_SELECTION_AUTO_OFF, toSet);
+              
+              if(autoTagSelection.isSelected()) {
+                checkStartTimer();
+              }
+            };
+            
+            JCheckBoxMenuItem timerOff = new JCheckBoxMenuItem(tr("disabled"), timer == 0);
+            timerOff.addActionListener(timerAction);
+            JCheckBoxMenuItem timer5 = new JCheckBoxMenuItem("5", timer == 5);
+            timer5.addActionListener(timerAction);
+            JCheckBoxMenuItem timer10 = new JCheckBoxMenuItem("10", timer == 10);
+            timer10.addActionListener(timerAction);
+            JCheckBoxMenuItem timer20 = new JCheckBoxMenuItem("20", timer == 20);
+            timer20.addActionListener(timerAction);
+            JCheckBoxMenuItem timer30 = new JCheckBoxMenuItem("30", timer == 30);
+            timer30.addActionListener(timerAction);
+            
+            autoOff.add(timerOff);
+            autoOff.add(timer5);
+            autoOff.add(timer10);
+            autoOff.add(timer20);
+            autoOff.add(timer30);
+            
+            prefMenu.add(autoOff);
+            
+            prefMenu.show((JButton)e.getSource(), ((JButton)e.getSource()).getWidth(), ((JButton)e.getSource()).getHeight());
+          }
         });
         
         titleBar.add(settings, i+2);
@@ -549,7 +603,7 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
       autoOffTimer = new Thread() {
         public void run() {
           SwingUtilities.invokeLater(() -> {
-            autoOffLabel.setText(tr("off in {0} seconds", String.format("%02d", Math.round(timer/1000))));
+            autoOffLabel.setText(tr("for {0} seconds", String.format("%02d", Math.round(timer/1000))));
             autoOffLabel.setVisible(true);
           });
           
@@ -560,14 +614,14 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
               // ignore
             }
             
-            SwingUtilities.invokeLater(() -> autoOffLabel.setText(tr("off in {0} seconds", String.format("%02d", Math.round(timer/1000)))));
+            SwingUtilities.invokeLater(() -> autoOffLabel.setText(tr("for {0} seconds", String.format("%02d", Math.round(timer/1000)))));
           }
           
           SwingUtilities.invokeLater(() -> {
             autoOffLabel.setVisible(false);
             
             if(Config.getPref().getInt(PREF_KEY_SELECTION_AUTO_OFF, 10) != 0) {
-              useOnSelection.setSelected(false);
+              autoTagSelection.setSelected(false);
             }
           });
         }
@@ -655,7 +709,7 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
       }
       
       panelBounds = p.getBounds();
-      useOnSelection.setSelected(false);
+      autoTagSelection.setSelected(false);
     }
   }
   
@@ -696,44 +750,70 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
       putValue(SHORT_DESCRIPTION, parent.getValue(SHORT_DESCRIPTION));
       putValue(SMALL_ICON, parent.getValue(SMALL_ICON));
     }
-
+    
     @Override
     public void actionPerformed(ActionEvent e) {
       if(parent != null) {
-        int index = nodeList.getSelectedIndex();
+        autoTagDisabled = true;
+        Collection<OsmPrimitive> curSel = OsmDataManager.getInstance().getActiveDataSet().getAllSelected();
         
-        model.add(0, NODE_TEMPLATE_DUMMY);
-        nodeList.setSelectedIndex(0);
+        boolean isWay = ((TaggingPreset) parent).types.contains(TaggingPresetType.WAY);
+        boolean isNode = (((TaggingPreset) parent).types.contains(TaggingPresetType.NODE));
         
-        paste.actionPerformed(e);
+        EastNorth center = MainApplication.getMap().mapView.getCenter();
+        Way w = null;
+        Node n1 = new Node(center);
+        Node n2 = null;
+        OsmPrimitive toUse = n1;
         
-        model.remove(0);
-        nodeList.setSelectedIndex(index);
+        if(!isNode) {          
+          n2 = new Node(center.add(5, 5));
+          OsmDataManager.getInstance().getActiveDataSet().addPrimitive(n1);
+          OsmDataManager.getInstance().getActiveDataSet().addPrimitive(n2);
+         
+          w = new Way();
+          toUse = w;
+          w.addNode(n1);
+          w.addNode(n2);
+          OsmDataManager.getInstance().getActiveDataSet().addPrimitive(w);
+        }
         
+        OsmDataManager.getInstance().getActiveDataSet().setSelected(w);
         parent.actionPerformed(e);
-        
-        final Collection<Node> nodeList = OsmDataManager.getInstance().getActiveDataSet().getSelectedNodes();
 
-        for (Node node : nodeList) {
-          if(!node.getKeys().isEmpty()) {
-            if(model2.isEmpty()) {
-              model.addElement(new NodeTemplate(((TaggingPreset)parent).iconName, node));
-            }
-            else {
-              model2.addElement(new NodeTemplate(((TaggingPreset)parent).iconName, node));
-            }
+        if(!toUse.getKeys().isEmpty()) {
+          NodeTemplate t = new NodeTemplate(((TaggingPreset)parent).iconName, toUse);
+          
+          if(((TaggingPreset) parent).types != null) {
+            t.setNotForNodes(!isNode);
+            t.setForWays(isWay);
+          }
+          
+          if(model2.isEmpty()) {
+            model.addElement(t);
+          }
+          else {
+            model2.addElement(t);
           }
         }
         
+        if(w != null) {
+          OsmDataManager.getInstance().getActiveDataSet().removePrimitive(w);
+        }
+        
+        if(n1 != null) {
+          OsmDataManager.getInstance().getActiveDataSet().removePrimitive(n1);
+        }
+        
+        if(n2 != null) {
+          OsmDataManager.getInstance().getActiveDataSet().removePrimitive(n2);
+        }
+        
         OsmDataManager.getInstance().getActiveDataSet().clearSelection();
-        
-        OsmDataManager.getInstance().getActiveDataSet().update(() -> {
-          for (OsmPrimitive osm : nodeList) {
-            osm.setDeleted(true);
-          }
-        });
-        
+                
         refillLists();
+        OsmDataManager.getInstance().getActiveDataSet().setSelected(curSel);
+        autoTagDisabled = false;
       }
     }
   }
@@ -766,7 +846,7 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
       else if(subMenu instanceof JMenuItem) {
         final Action a = ((JMenuItem) subMenu).getAction();
         
-        if(a instanceof TaggingPreset && ((TaggingPreset) a).types != null && ((TaggingPreset) a).types.contains(TaggingPresetType.NODE)) {
+        if(a instanceof TaggingPreset && ((TaggingPreset) a).types != null && (((TaggingPreset) a).types.contains(TaggingPresetType.NODE) || ((TaggingPreset) a).types.contains(TaggingPresetType.WAY))) {
           parent.add(new PresetAction((JMenuItem)subMenu));
           parent2.add(new IconAction((JMenuItem)subMenu));
         }
@@ -807,17 +887,12 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
     updateBtnEnabledState();
   }
 
-  @Override
-  public void selectionChanged(SelectionChangeEvent event) {
-    add.updateEnabledState();
-    
-    if(useOnSelection.isVisible() && useOnSelection.isSelected()) {
-      Set<OsmPrimitive> sel = event.getSelection();
-      
-      if(sel.size() == 1) {
+  private void handleSelection(Collection<OsmPrimitive> selection, boolean selectionTag) {
+    if(((autoTagSelection.isVisible() && autoTagSelection.isSelected()) || selectionTag) && !autoTagDisabled) {
+      if(!selection.isEmpty()) {
         timer = Config.getPref().getInt(PREF_KEY_SELECTION_AUTO_OFF, 10) * 1000 + 500;
         
-        sel.forEach(p -> {
+        selection.forEach(p -> {
           NodeTemplate t = nodeList.getSelectedValue();
           
           if(t == null) {
@@ -828,21 +903,28 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
             boolean forWays = t.isForWays();
             boolean notForNodes = t.isNotForNodes();
             
+            final ArrayList<Command> cmds = new ArrayList<>();
+            
             t.map.forEach((key, value) -> {
-              ArrayList<Command> cmds = new ArrayList<>();
-              
               if(((p instanceof Node && !notForNodes) || (forWays && p instanceof Way)) && !p.hasTag(key, value)) {
                 cmds.add(new ChangePropertyCommand(p, key, value));
               }
-              
-              if(!cmds.isEmpty()) {
-                UndoRedoHandler.getInstance().add(new SequenceCommand("add template to selection", cmds));
-              }
             });
+            
+            if(!cmds.isEmpty()) {
+              UndoRedoHandler.getInstance().add(new SequenceCommand("add template to selection", cmds));
+            }
           }
         });
       }
     }
+  }
+  
+  @Override
+  public synchronized void selectionChanged(SelectionChangeEvent event) {
+    add.updateEnabledState();
+    
+    handleSelection(event.getSelection(), false);
   }
 
   private void updateBtnEnabledState() {
@@ -866,7 +948,7 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
     SelectionEventManager.getInstance().addSelectionListenerForEdt(this);
     MainApplication.getLayerManager().addActiveLayerChangeListener(this);
     Config.getPref().addKeyPreferenceChangeListener(PREF_KEY_DUAL_LIST, prefListener);
-    Config.getPref().addKeyPreferenceChangeListener(PREF_KEY_USE_ON_SELECTION, prefListener2);
+    Config.getPref().addKeyPreferenceChangeListener(PREF_KEY_AUTO_TAG_SELECTION, prefListener2);
     updateBtnEnabledState();
   }
 
@@ -875,7 +957,7 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
     SelectionEventManager.getInstance().removeSelectionListener(this);
     MainApplication.getLayerManager().removeActiveLayerChangeListener(this);
     Config.getPref().removeKeyPreferenceChangeListener(PREF_KEY_DUAL_LIST, prefListener);
-    Config.getPref().removeKeyPreferenceChangeListener(PREF_KEY_USE_ON_SELECTION, prefListener2);
+    Config.getPref().removeKeyPreferenceChangeListener(PREF_KEY_AUTO_TAG_SELECTION, prefListener2);
   }
 
   @Override
@@ -1023,6 +1105,19 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
             }
           }
         }
+        
+        final Collection<Way> wayList = OsmDataManager.getInstance().getActiveDataSet().getSelectedWays();
+        
+        for(Way w : wayList) {
+          if(!w.getKeys().isEmpty()) {
+            if(model2.isEmpty()) {
+              model.addElement(new NodeTemplate(w));
+            }
+            else {
+              model2.addElement(new NodeTemplate(w));
+            }
+          }
+        }
       } finally {
         refillLists();
         updateBtnEnabledState();
@@ -1034,7 +1129,7 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
     protected final void updateEnabledState() {
       DataSet ds = OsmDataManager.getInstance().getActiveDataSet();
       setEnabled(ds != null && !ds.isLocked() && !Utils.isEmpty(OsmDataManager.getInstance().getInProgressSelection())
-          && !ds.getSelectedNodes().isEmpty() && nodeList.isEnabled());
+          && (!ds.getSelectedNodes().isEmpty() || !ds.getSelectedWays().isEmpty()) && nodeList.isEnabled());
     }
   }
   
@@ -1186,23 +1281,30 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
       loadIcon();
     }
 
-    public NodeTemplate(String iconName, Node node) {
+    public NodeTemplate(String iconName, OsmPrimitive p) {
       map = new LinkedHashMap<>();
       
-      node.getKeys().forEach((key,value) -> {
+      p.getKeys().forEach((key,value) -> {
         if(!value.isBlank()) {
           map.put(key, value);
         }
       });
       
       this.iconName = iconName;
-      loadName(node);
+      loadName(p);
       loadIcon();
     }
     
     public NodeTemplate(Node node) {
       map = node.getKeys();
       loadName(node);
+    }
+    
+    public NodeTemplate(Way way) {
+      map = way.getKeys();
+      loadName(way);
+      forWays = true;
+      notForNodes = true;
     }
     
     public void setNotForNodes(boolean notForNodes) {
@@ -1269,8 +1371,8 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
       }
     }
     
-    private void loadName(Node node) {
-      name = node.getLocalName();
+    private void loadName(OsmPrimitive p) {
+      name = p.getLocalName();
 
       if (name == null) {
         name = "";
