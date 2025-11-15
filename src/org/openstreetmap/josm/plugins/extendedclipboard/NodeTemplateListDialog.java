@@ -3,14 +3,17 @@ package org.openstreetmap.josm.plugins.extendedclipboard;
 
 import static org.openstreetmap.josm.tools.I18n.tr;
 
+import java.awt.BorderLayout;
 import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.Graphics;
 import java.awt.GridBagLayout;
 import java.awt.Rectangle;
 import java.awt.event.ActionEvent;
+import java.awt.event.ActionListener;
 import java.awt.event.ComponentAdapter;
 import java.awt.event.ComponentEvent;
+import java.awt.event.ItemEvent;
 import java.awt.event.KeyEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
@@ -25,16 +28,20 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import javax.swing.AbstractAction;
 import javax.swing.Action;
-import javax.swing.BoxLayout;
+import javax.swing.BorderFactory;
 import javax.swing.DefaultListCellRenderer;
 import javax.swing.DefaultListModel;
 import javax.swing.Icon;
 import javax.swing.ImageIcon;
+import javax.swing.JButton;
+import javax.swing.JCheckBox;
+import javax.swing.JCheckBoxMenuItem;
 import javax.swing.JLabel;
 import javax.swing.JList;
 import javax.swing.JMenu;
@@ -51,13 +58,19 @@ import javax.swing.event.ListSelectionListener;
 
 import org.openstreetmap.josm.actions.AbstractPasteAction;
 import org.openstreetmap.josm.actions.JosmAction;
+import org.openstreetmap.josm.command.ChangePropertyCommand;
+import org.openstreetmap.josm.command.Command;
+import org.openstreetmap.josm.command.SequenceCommand;
+import org.openstreetmap.josm.data.UndoRedoHandler;
 import org.openstreetmap.josm.data.coor.EastNorth;
 import org.openstreetmap.josm.data.osm.DataSelectionListener;
 import org.openstreetmap.josm.data.osm.DataSet;
 import org.openstreetmap.josm.data.osm.Node;
 import org.openstreetmap.josm.data.osm.OsmDataManager;
 import org.openstreetmap.josm.data.osm.OsmPrimitive;
+import org.openstreetmap.josm.data.osm.OsmPrimitiveType;
 import org.openstreetmap.josm.data.osm.Tag;
+import org.openstreetmap.josm.data.osm.Way;
 import org.openstreetmap.josm.data.osm.event.SelectionEventManager;
 import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.gui.SideButton;
@@ -83,17 +96,21 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
   private static final String PREF_KEY_NAMES = "NodeTemplateListDialog.nodeTemplates.names";
   private static final String PREF_KEY_KEYS = "NodeTemplateListDialog.nodeTemplates.keys";
   private static final String PREF_KEY_DUAL_LIST = "NodeTemplateListDialog.nodeTemplates.dualList";
+  private static final String PREF_KEY_USE_ON_SELECTION = "NodeTemplateListDialog.nodeTemplates.useOnSelection";
+  private static final String PREF_KEY_SELECTION_AUTO_OFF = "NodeTemplateListDialog.nodeTemplates.useOnSelectionAutoOff";
   
   private static final String SEPARATOR_NAME = ";;;";
   private static final String SEPARATOR_ICON = "###";
+  private static final String SEPARATOR_WAY = "***";
   
-  private static final NodeTemplate NODE_TEMPLATE_DUMMY = new NodeTemplate("", null, Collections.emptyMap());
+  private static final NodeTemplate NODE_TEMPLATE_DUMMY = new NodeTemplate("", null, Collections.emptyMap(), false, false);
 
   private Rectangle panelBounds;
   private JPanel p;
   private JScrollPane west;
   private JScrollPane east;
   private JSeparator middle;
+  private JCheckBox useOnSelection;
   
   private final JList<NodeTemplate> nodeList;
   private final JList<NodeTemplate> nodeList2;
@@ -105,6 +122,8 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
   private final CopyAction copy = new CopyAction();
   private final PasteAction paste = new PasteAction();
   private final DeleteAction delete = new DeleteAction();
+  private final JCheckBoxMenuItem forWays;
+  private final JCheckBoxMenuItem notForNodes;
 
   private final SideButton btnAdd = new SideButton(add, false);
   private final SideButton btnEdit = new SideButton(edit, false);
@@ -117,6 +136,11 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
   private final JMenu setIconMenu = new JMenu(tr("Set icon for selected node template from preset"));
   
   private PreferenceChangedListener prefListener;
+  private PreferenceChangedListener prefListener2;
+  
+  private int timer;
+  private Thread autoOffTimer;
+  private JLabel autoOffLabel;
   
   private final AbstractAction sortItem = new AbstractAction() {
     @Override
@@ -167,18 +191,6 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
             KeyEvent.VK_B, Shortcut.ALT_CTRL_SHIFT), 150, true);
     importMenu.setIcon(ImageProvider.get("download", ImageSizes.SMALLICON));
     
-    prefListener = e -> {
-      if(!Boolean.parseBoolean((String)e.getNewValue().getValue())) {
-        for(int i = 0; i < model2.size(); i++) {
-          model.addElement(model2.get(i));
-        }
-        
-        model2.clear();
-      }
-      
-      refillLists();
-    };
-    
     model = new DefaultListModel<>();
     nodeList = new JList<>(model);
     nodeList.setAlignmentX(1.0f);
@@ -189,6 +201,34 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
     nodeList2 = new JList<>(model2);
     nodeList2.setAlignmentX(1.0f);
     nodeList2.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+    
+    forWays = new JCheckBoxMenuItem(tr("Allow usage for ways on selection"), ImageProvider.get(OsmPrimitiveType.WAY));
+    forWays.addActionListener(new ActionListener() {
+      @Override
+      public void actionPerformed(ActionEvent e) {
+        NodeTemplate t = nodeList.getSelectedValue();
+        
+        if(t == null) {
+          t = nodeList2.getSelectedValue();
+        }
+        
+        t.setForWays(!t.isForWays());
+      }
+    });
+    
+    notForNodes = new JCheckBoxMenuItem(tr("Not for nodes"), ImageProvider.get("not_for_nodes", ImageProvider.ImageSizes.MENU));
+    notForNodes.addActionListener(new ActionListener() {
+      @Override
+      public void actionPerformed(ActionEvent e) {
+        NodeTemplate t = nodeList.getSelectedValue();
+        
+        if(t == null) {
+          t = nodeList2.getSelectedValue();
+        }
+        
+        t.setNotForNodes(!t.isNotForNodes());
+      }
+    });
     
     final DefaultListCellRenderer renderer = new DefaultListCellRenderer() {
       @SuppressWarnings("rawtypes")
@@ -245,12 +285,24 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
               }
               
               SwingUtilities.invokeLater(() -> {
-                if (SwingUtilities.isLeftMouseButton(e) && (knownClickCount.get() == 2 || knownClickCount.get() == 3)) {
-                  if(knownClickCount.get() == 2) {
+                if (SwingUtilities.isLeftMouseButton(e) && (knownClickCount.get() >= 1 && knownClickCount.get() <= 3)) {
+                  if(knownClickCount.get() == 1 && Config.getPref().getBoolean(PREF_KEY_USE_ON_SELECTION, true)) {
+                    if(nodeList.getSelectedIndex() != -1 || nodeList2.getSelectedIndex() != -1) {
+                      if(!useOnSelection.isSelected()) {
+                        useOnSelection.setSelected(true);
+                      }
+                      else {
+                        checkStartTimer();
+                      }
+                    }
+                  }
+                  else if(knownClickCount.get() == 2) {
                     copy.actionPerformed(null);
+                    useOnSelection.setSelected(false);
                   }
                   else if(knownClickCount.get() == 3) {
                     paste.actionPerformed(new ActionEvent(btnPaste, 0, "PASTE"));
+                    useOnSelection.setSelected(false);
                   }
                   
                   MainApplication.getMainPanel().requestFocusInWindow();
@@ -269,6 +321,11 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
           if(e.isPopupTrigger()) {
             if(index >= 0 && ((JList<?>)e.getSource()).getCellBounds(index, index).contains(e.getPoint())) {
               ((JList<?>)e.getSource()).setSelectedIndex(index);
+              
+              if(Config.getPref().getBoolean(PREF_KEY_USE_ON_SELECTION, true)) {
+                useOnSelection.setEnabled(true);
+                useOnSelection.setSelected(true);
+              }
             }
             else {
               ((JList<?>)e.getSource()).clearSelection();
@@ -276,6 +333,16 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
             
             updateImportMenu();
             updateBtnEnabledState();
+            
+            if(nodeList.getSelectedIndex() != -1) {
+              forWays.setSelected(nodeList.getSelectedValue().isForWays());
+              notForNodes.setSelected(nodeList.getSelectedValue().isNotForNodes());
+            }
+            else if(nodeList2.getSelectedIndex() != -1) {
+              forWays.setSelected(nodeList2.getSelectedValue().isForWays());
+              notForNodes.setSelected(nodeList2.getSelectedValue().isNotForNodes());
+            }
+            
             popupMenu.show(e.getComponent(), e.getPoint().x, e.getPoint().y);
           }
         }
@@ -298,13 +365,33 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
           }
         }
       }
+      
+      if(nodeList.getSelectedIndex() == -1 && nodeList2.getSelectedIndex() == -1) {
+        useOnSelection.setSelected(false);
+        useOnSelection.setEnabled(false);
+      }
+      else {
+        useOnSelection.setEnabled(true);
+      }
     };
     
     nodeList.addListSelectionListener(selectionListener);
     nodeList2.addListSelectionListener(selectionListener);
     
+    useOnSelection = new JCheckBox(tr("Use on selection"));
+    useOnSelection.setToolTipText(tr("If activated selected template is automatically used on the selection in the map view, if single object is selected."));
+    useOnSelection.setEnabled(false);
+    useOnSelection.addItemListener(e -> {
+      if(e.getStateChange() == ItemEvent.SELECTED) {
+        checkStartTimer();
+      }
+      
+      if((nodeList.getSelectedIndex() == -1 && nodeList2.getSelectedIndex() == -1) || !useOnSelection.isSelected()) {
+        timer = 0;
+      }
+    });
+    
     p = new JPanel(new GridBagLayout());
-    p.setLayout(new BoxLayout(p, BoxLayout.X_AXIS));
     
     west = new JScrollPane(nodeList);
     west.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
@@ -313,9 +400,43 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
     
     middle = new JSeparator(JSeparator.VERTICAL);
     
-    p.add(west, GBC.std(1, 1));
-    p.add(middle, GBC.std(2, 1));
-    p.add(east, GBC.std(3, 1));
+    autoOffLabel = new JLabel(tr("off in {0} seconds"));
+    autoOffLabel.setVisible(false);
+    
+    JPanel selection = new JPanel(new BorderLayout(10, 0));
+    selection.add(useOnSelection, BorderLayout.CENTER);
+    selection.add(autoOffLabel, BorderLayout.EAST);
+    useOnSelection.setVisible(Config.getPref().getBoolean(PREF_KEY_USE_ON_SELECTION, true));
+    
+    prefListener = e -> {
+      if(!Boolean.parseBoolean((String)e.getNewValue().getValue())) {
+        for(int i = 0; i < model2.size(); i++) {
+          model.addElement(model2.get(i));
+        }
+        
+        model2.clear();
+      }
+      
+      panelBounds.setBounds(0, 0, 0, 0);
+      refillLists();
+    };
+    
+    prefListener2 = e -> {
+      
+      if(Boolean.parseBoolean((String)e.getNewValue().getValue())) {
+        selection.setVisible(true);
+      }
+      else {
+        selection.setVisible(false);
+      }
+      
+      p.invalidate();
+    };
+    
+    p.add(selection, GBC.std(1,1).span(3).fill(GBC.HORIZONTAL));
+    p.add(west, GBC.std(1, 2).fill(GBC.VERTICAL));
+    p.add(middle, GBC.std(2, 2).fill(GBC.VERTICAL));
+    p.add(east, GBC.std(3, 2).fill(GBC.VERTICAL));
     
     west.addComponentListener(new ComponentAdapter() {
       @Override
@@ -336,6 +457,73 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
         
     createLayout(p, false, Arrays.asList(this.btnAdd, this.btnCopy, this.btnPaste, this.btnEdit, this.btnDelete));
     
+    for(int i = 0; i < titleBar.getComponentCount(); i++) {
+      if(titleBar.getComponent(i) instanceof JPanel) {
+        JButton settings = new JButton(ImageProvider.get("preference", ImageProvider.ImageSizes.SMALLICON));
+        settings.setBorder(BorderFactory.createEmptyBorder());
+        settings.addActionListener(e -> {
+          JPopupMenu menu = new JPopupMenu();
+          
+          JCheckBoxMenuItem item = new JCheckBoxMenuItem(tr("Dual list"));
+          item.setSelected(Config.getPref().getBoolean(PREF_KEY_DUAL_LIST, true));
+          item.addActionListener(a -> Config.getPref().putBoolean(PREF_KEY_DUAL_LIST, !Config.getPref().getBoolean(PREF_KEY_DUAL_LIST, true)));
+          
+          menu.add(item);
+          
+          item = new JCheckBoxMenuItem(tr("Use on selection"));
+          item.setSelected(Config.getPref().getBoolean(PREF_KEY_USE_ON_SELECTION, true));
+          item.addActionListener(a -> Config.getPref().putBoolean(PREF_KEY_USE_ON_SELECTION, !Config.getPref().getBoolean(PREF_KEY_USE_ON_SELECTION, true)));
+          
+          menu.add(item);
+          
+          JMenu autoOff = new JMenu(tr("Auto off timer for selection"));
+          
+          int timer = Config.getPref().getInt(PREF_KEY_SELECTION_AUTO_OFF, 10);
+          
+          ActionListener timerAction = ta -> {
+            String value = ((JCheckBoxMenuItem)ta.getSource()).getText();
+            
+            int toSet = 0;
+            
+            if(value.matches("\\d+")) {
+              toSet = Integer.parseInt(value);
+            } 
+            
+            Config.getPref().putInt(PREF_KEY_SELECTION_AUTO_OFF, toSet);
+            
+            if(useOnSelection.isSelected()) {
+              checkStartTimer();
+            }
+          };
+          
+          JCheckBoxMenuItem timerOff = new JCheckBoxMenuItem(tr("disabled"), timer == 0);
+          timerOff.addActionListener(timerAction);
+          JCheckBoxMenuItem timer5 = new JCheckBoxMenuItem("5", timer == 5);
+          timer5.addActionListener(timerAction);
+          JCheckBoxMenuItem timer10 = new JCheckBoxMenuItem("10", timer == 10);
+          timer10.addActionListener(timerAction);
+          JCheckBoxMenuItem timer20 = new JCheckBoxMenuItem("20", timer == 20);
+          timer20.addActionListener(timerAction);
+          JCheckBoxMenuItem timer30 = new JCheckBoxMenuItem("30", timer == 30);
+          timer30.addActionListener(timerAction);
+          
+          autoOff.add(timerOff);
+          autoOff.add(timer5);
+          autoOff.add(timer10);
+          autoOff.add(timer20);
+          autoOff.add(timer30);
+          
+          menu.add(autoOff);
+          
+          menu.show((JButton)e.getSource(), ((JButton)e.getSource()).getWidth(), ((JButton)e.getSource()).getHeight());
+        });
+        
+        titleBar.add(settings, i+2);
+        
+        break;
+      }
+    }
+    
     p.addComponentListener(new ComponentAdapter() {
       @Override
       public void componentResized(ComponentEvent e) {
@@ -350,6 +538,40 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
     });
     
     load();
+  }
+  
+  private void checkStartTimer() {
+    timer = Config.getPref().getInt(PREF_KEY_SELECTION_AUTO_OFF, 10) * 1000 + 500;
+    
+    if(timer > 500 && (autoOffTimer == null || !autoOffTimer.isAlive())) {
+      autoOffTimer = new Thread() {
+        public void run() {
+          SwingUtilities.invokeLater(() -> {
+            autoOffLabel.setText(tr("off in {0} seconds", String.format("%02d", Math.round(timer/1000))));
+            autoOffLabel.setVisible(true);
+          });
+          
+          while((timer-= 200) > 500) {
+            try {
+              Thread.sleep(200);
+            } catch (InterruptedException e) {
+              // ignore
+            }
+            
+            SwingUtilities.invokeLater(() -> autoOffLabel.setText(tr("off in {0} seconds", String.format("%02d", Math.round(timer/1000)))));
+          }
+          
+          SwingUtilities.invokeLater(() -> {
+            autoOffLabel.setVisible(false);
+            
+            if(Config.getPref().getInt(PREF_KEY_SELECTION_AUTO_OFF, 10) != 0) {
+              useOnSelection.setSelected(false);
+            }
+          });
+        }
+      };
+      autoOffTimer.start();
+    }
   }
   
   private synchronized void refillLists() {
@@ -431,6 +653,7 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
       }
       
       panelBounds = p.getBounds();
+      useOnSelection.setSelected(false);
     }
   }
   
@@ -565,6 +788,8 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
     popupMenu.add(importMenu);
     popupMenu.add(setIconMenu);
     popupMenu.add(sortItem);
+    popupMenu.add(forWays);
+    popupMenu.add(notForNodes);
     popupMenu.add(copy);
     popupMenu.add(edit);
     popupMenu.add(paste);
@@ -583,6 +808,39 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
   @Override
   public void selectionChanged(SelectionChangeEvent event) {
     add.updateEnabledState();
+    
+    if(useOnSelection.isVisible() && useOnSelection.isSelected()) {
+      Set<OsmPrimitive> sel = event.getSelection();
+      
+      if(sel.size() == 1) {
+        timer = Config.getPref().getInt(PREF_KEY_SELECTION_AUTO_OFF, 10) * 1000 + 500;
+        
+        sel.forEach(p -> {
+          NodeTemplate t = nodeList.getSelectedValue();
+          
+          if(t == null) {
+            t = nodeList2.getSelectedValue();
+          }
+          
+          if(t != null) {
+            boolean forWays = t.isForWays();
+            boolean notForNodes = t.isNotForNodes();
+            
+            t.map.forEach((key, value) -> {
+              ArrayList<Command> cmds = new ArrayList<>();
+              
+              if(((p instanceof Node && !notForNodes) || (forWays && p instanceof Way)) && !p.hasTag(key, value)) {
+                cmds.add(new ChangePropertyCommand(p, key, value));
+              }
+              
+              if(!cmds.isEmpty()) {
+                UndoRedoHandler.getInstance().add(new SequenceCommand("add template to selection", cmds));
+              }
+            });
+          }
+        });
+      }
+    }
   }
 
   private void updateBtnEnabledState() {
@@ -606,6 +864,7 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
     SelectionEventManager.getInstance().addSelectionListenerForEdt(this);
     MainApplication.getLayerManager().addActiveLayerChangeListener(this);
     Config.getPref().addKeyPreferenceChangeListener(PREF_KEY_DUAL_LIST, prefListener);
+    Config.getPref().addKeyPreferenceChangeListener(PREF_KEY_USE_ON_SELECTION, prefListener2);
     updateBtnEnabledState();
   }
 
@@ -614,6 +873,7 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
     SelectionEventManager.getInstance().removeSelectionListener(this);
     MainApplication.getLayerManager().removeActiveLayerChangeListener(this);
     Config.getPref().removeKeyPreferenceChangeListener(PREF_KEY_DUAL_LIST, prefListener);
+    Config.getPref().removeKeyPreferenceChangeListener(PREF_KEY_USE_ON_SELECTION, prefListener2);
   }
 
   @Override
@@ -632,17 +892,32 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
       for (int i = 0; i < n; i++) {
         String name = names.get(i);
         String iconName = null;
+        boolean forWays = false;
+        boolean notForNodes = false;
 
         if(name.contains(SEPARATOR_ICON)) {
           iconName = name.substring(name.indexOf(SEPARATOR_ICON)+SEPARATOR_ICON.length());
           name = name.substring(0,name.indexOf(SEPARATOR_ICON));
         }
         
+        if(name.contains(SEPARATOR_WAY)) {
+          String test = name.substring(0, name.lastIndexOf((SEPARATOR_WAY)));
+          
+          if(test.contains(SEPARATOR_WAY)) {
+            notForNodes = Boolean.parseBoolean(test.substring(0,test.indexOf(SEPARATOR_WAY)));
+            test = test.substring(test.indexOf(SEPARATOR_WAY)+SEPARATOR_WAY.length());
+          }
+          
+          forWays = Boolean.parseBoolean(test);
+                  
+          name = name.substring(name.lastIndexOf(SEPARATOR_WAY)+SEPARATOR_WAY.length());
+        }
+        
         if (name.contains(SEPARATOR_NAME)) {
           name = name.substring(0, name.indexOf(SEPARATOR_NAME));
         }
 
-        model.addElement(new NodeTemplate(name, iconName, keys.get(i)));
+        model.addElement(new NodeTemplate(name, iconName, keys.get(i), forWays, notForNodes));
       }
     }
     else {
@@ -654,7 +929,7 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
         LinkedHashMap<String, String> map = new LinkedHashMap<>();
         map.put(tags[i].getKey(), tags[i].getValue());
         
-        model.addElement(new NodeTemplate(nameArr[i], iconArr[i], map));
+        model.addElement(new NodeTemplate(nameArr[i], iconArr[i], map, false, false));
       }
       
       sortItem.actionPerformed(null);
@@ -672,6 +947,14 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
         name = template.name + SEPARATOR_NAME + count++;
       }
 
+      if(template.isNotForNodes()) {
+        name = "true" + SEPARATOR_WAY + name;
+      }
+      
+      if(template.isForWays()) {
+        name = "true" + SEPARATOR_WAY + name;
+      }
+      
       if(template.iconName != null) {
         name += SEPARATOR_ICON + template.iconName;
       }
@@ -795,21 +1078,23 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
 
     @Override
     public void actionPerformed(ActionEvent e) {
-      NodeTemplate template = nodeList.getSelectedValue();
-      
-      if(template == null) {
-        template = nodeList2.getSelectedValue();
-      }
-      
-      if(template != null) {
-        ClipboardUtils.copy(new PrimitiveTransferable(PrimitiveTransferData.getDataWithReferences(Collections.singleton(template.createNode()))));
+      if(isEnabled()) { 
+        NodeTemplate template = nodeList.getSelectedValue();
+        
+        if(template == null) {
+          template = nodeList2.getSelectedValue();
+        }
+        
+        if(template != null) {
+          ClipboardUtils.copy(new PrimitiveTransferable(PrimitiveTransferData.getDataWithReferences(Collections.singleton(template.createNode()))));
+        }
       }
     }
 
     @Override
     protected final void updateEnabledState() {
-      setEnabled((nodeList != null && nodeList.getSelectedIndex() >= 0 && nodeList.isEnabled())
-          || (nodeList2 != null && nodeList2.getSelectedIndex() >= 0 && nodeList2.isEnabled()));
+      setEnabled((nodeList != null && nodeList.getSelectedValue() != null && !nodeList.getSelectedValue().isNotForNodes() && nodeList.isEnabled() )
+          || (nodeList2 != null && nodeList2.getSelectedValue() != null && !nodeList2.getSelectedValue().isNotForNodes() && nodeList2.isEnabled()));
     }
   }
 
@@ -820,21 +1105,23 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
     
     @Override
     public void actionPerformed(ActionEvent e) {
-      JList<NodeTemplate> list = nodeList;
-      
-      if(nodeList2.getSelectedValue() != null) {
-        list = nodeList2;
-      }
-      
-      if(list.getSelectedValue() != null) {
-        transferHandler.pasteOn(getLayerManager().getEditLayer(), MainApplication.getMap().mapView.getCenter(), new PrimitiveTransferable(PrimitiveTransferData.getDataWithReferences(Collections.singleton(list.getSelectedValue().createNode()))));
+      if(isEnabled()) {
+        JList<NodeTemplate> list = nodeList;
+        
+        if(nodeList2.getSelectedValue() != null) {
+          list = nodeList2;
+        }
+        
+        if(list.getSelectedValue() != null) {
+          transferHandler.pasteOn(getLayerManager().getEditLayer(), MainApplication.getMap().mapView.getCenter(), new PrimitiveTransferable(PrimitiveTransferData.getDataWithReferences(Collections.singleton(list.getSelectedValue().createNode()))));
+        }
       }
     }
 
     @Override
     protected final void updateEnabledState() {
-      setEnabled((nodeList != null && nodeList.getSelectedIndex() >= 0 && nodeList.isEnabled()) ||
-          (nodeList2 != null && nodeList2.getSelectedIndex() >= 0 && nodeList2.isEnabled()));
+      setEnabled((nodeList != null && nodeList.getSelectedValue() != null && !nodeList.getSelectedValue().isNotForNodes() && nodeList.isEnabled() )
+          || (nodeList2 != null && nodeList2.getSelectedValue() != null && !nodeList2.getSelectedValue().isNotForNodes() && nodeList2.isEnabled()));
     }
   }
   
@@ -883,13 +1170,17 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
     private String name;
     private String iconName;
     private Icon icon;
+    private boolean forWays;
+    private boolean notForNodes;
     
     private Map<String, String> map;
-
-    public NodeTemplate(String name, String iconName, Map<String, String> map) {
+    
+    public NodeTemplate(String name, String iconName, Map<String, String> map, boolean forWays, boolean notForNodes) {
       this.name = name;
       this.map = map;
       this.iconName = iconName;
+      this.forWays = forWays;
+      this.notForNodes = notForNodes;
       loadIcon();
     }
 
@@ -910,6 +1201,22 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
     public NodeTemplate(Node node) {
       map = node.getKeys();
       loadName(node);
+    }
+    
+    public void setNotForNodes(boolean notForNodes) {
+      this.notForNodes = notForNodes;
+    }
+    
+    public boolean isNotForNodes() {
+      return notForNodes;
+    }
+    
+    public void setForWays(boolean value) {
+      forWays = value;
+    }
+    
+    public boolean isForWays() {
+      return forWays;
     }
     
     private void loadIcon() {

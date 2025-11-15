@@ -6,14 +6,18 @@
 #, fuzzy
 msgid ""
 msgstr ""
-"Project-Id-Version: PACKAGE VERSION\\nReport-Msgid-Bugs-To: \\nPOT-Creation-"
-"Date: 2025-05-29 21:33+0200\\nPO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\\nLast-"
-"Translator: FULL NAME <EMAIL@ADDRESS>\\nLanguage-Team: LANGUAGE <LL@li."
-"org>\\nLanguage: de\\nMIME-Version: 1.0\\nContent-Type: text/plain; "
-"charset=CHARSET\\nContent-Transfer-Encoding: 8bit\\nPlural-Forms: "
-"nplurals=2; plural=(n != 1);\\n\n"
+"Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2025-09-05 10:57+0200\n"
+"POT-Creation-Date: 2025-11-15 16:02+0100\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE <LL@li.org>\\nLanguage: de\n"
+"Language: \n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+"\n"
 
 #: ../src/org/openstreetmap/josm/plugins/extendedclipboard/ExtendedClipboardDialog.java:109
 #: ../src/org/openstreetmap/josm/plugins/extendedclipboard/ExtendedClipboardDialog.java:110
@@ -25,7 +29,7 @@ msgid "Store selection for later reselection."
 msgstr "Sichern der Auswahl für erneute, spätere Auswahl"
 
 #: ../src/org/openstreetmap/josm/plugins/extendedclipboard/ExtendedClipboardDialog.java:110
-#: ../src/org/openstreetmap/josm/plugins/extendedclipboard/NodeTemplateListDialog.java:163
+#: ../src/org/openstreetmap/josm/plugins/extendedclipboard/NodeTemplateListDialog.java:191
 #, java-format
 msgid "Windows: {0}"
 msgstr "Fenster: {0}"
@@ -47,7 +51,7 @@ msgid "Edit name of selected clipboard "
 msgstr "Den Namen der ausgewählten Zwischenablage bearbeiten"
 
 #: ../src/org/openstreetmap/josm/plugins/extendedclipboard/ExtendedClipboardDialog.java:504
-#: ../src/org/openstreetmap/josm/plugins/extendedclipboard/NodeTemplateListDialog.java:746
+#: ../src/org/openstreetmap/josm/plugins/extendedclipboard/NodeTemplateListDialog.java:1031
 msgid "Name:"
 msgstr "Name:"
 
@@ -102,57 +106,96 @@ msgstr "Punkte auswählen"
 msgid "Select ways"
 msgstr "Linien auswählen"
 
-#: ../src/org/openstreetmap/josm/plugins/extendedclipboard/NodeTemplateListDialog.java:113
+#: ../src/org/openstreetmap/josm/plugins/extendedclipboard/NodeTemplateListDialog.java:136
 msgid "Import node template from preset"
 msgstr "Neue Punktevorlagen aus JOSM-Vorlage importieren"
 
-#: ../src/org/openstreetmap/josm/plugins/extendedclipboard/NodeTemplateListDialog.java:114
+#: ../src/org/openstreetmap/josm/plugins/extendedclipboard/NodeTemplateListDialog.java:137
 msgid "Set icon for selected node template from preset"
 msgstr "Symbol für ausgewählte Punktevorlage aus JOSM-Vorlage importieren"
 
-#: ../src/org/openstreetmap/josm/plugins/extendedclipboard/NodeTemplateListDialog.java:162
-#: ../src/org/openstreetmap/josm/plugins/extendedclipboard/NodeTemplateListDialog.java:163
+#: ../src/org/openstreetmap/josm/plugins/extendedclipboard/NodeTemplateListDialog.java:190
+#: ../src/org/openstreetmap/josm/plugins/extendedclipboard/NodeTemplateListDialog.java:191
 msgid "Node Template List"
 msgstr "Punktevorlagenliste"
 
-#: ../src/org/openstreetmap/josm/plugins/extendedclipboard/NodeTemplateListDialog.java:162
+#: ../src/org/openstreetmap/josm/plugins/extendedclipboard/NodeTemplateListDialog.java:190
 msgid "Store node tags for recration of nodes with the same tags"
 msgstr "Punkte-Tags für Erstellung neuer Punkte mit den gleichen Tags sichern"
 
-#: ../src/org/openstreetmap/josm/plugins/extendedclipboard/NodeTemplateListDialog.java:546
+#: ../src/org/openstreetmap/josm/plugins/extendedclipboard/NodeTemplateListDialog.java:206
+msgid "Allow usage for ways on selection"
+msgstr "Nutzung für Wege bei Auswahl zulassen"
+
+#: ../src/org/openstreetmap/josm/plugins/extendedclipboard/NodeTemplateListDialog.java:220
+msgid "Not for nodes"
+msgstr "Nicht für Punkte"
+
+#: ../src/org/openstreetmap/josm/plugins/extendedclipboard/NodeTemplateListDialog.java:377
+#: ../src/org/openstreetmap/josm/plugins/extendedclipboard/NodeTemplateListDialog.java:492
+msgid "Use on selection"
+msgstr "Auf Auswahl anwenden"
+
+#: ../src/org/openstreetmap/josm/plugins/extendedclipboard/NodeTemplateListDialog.java:378
+msgid ""
+"If activated selected template is automatically used on the selection in the "
+"map view, if single object is selected."
+msgstr ""
+"Wenn aktiviert werden die Tags des ausgewählten Templates automatisch auf "
+"die Auswahl in der Karte angewendet, wenn nur ein Objekt ausgewählt wird."
+
+#: ../src/org/openstreetmap/josm/plugins/extendedclipboard/NodeTemplateListDialog.java:387
+#: ../src/org/openstreetmap/josm/plugins/extendedclipboard/NodeTemplateListDialog.java:397
+#: ../src/org/openstreetmap/josm/plugins/extendedclipboard/NodeTemplateListDialog.java:422
+#, java-format
+msgid "off in {0} seconds"
+msgstr "aus in {0} Sekunden"
+
+#: ../src/org/openstreetmap/josm/plugins/extendedclipboard/NodeTemplateListDialog.java:486
+msgid "Dual list"
+msgstr "Zweispaltige Liste"
+
+#: ../src/org/openstreetmap/josm/plugins/extendedclipboard/NodeTemplateListDialog.java:498
+msgid "Auto off timer for selection"
+msgstr "Abschalttimer für Auswahl"
+
+#: ../src/org/openstreetmap/josm/plugins/extendedclipboard/NodeTemplateListDialog.java:516
+msgid "disabled"
+msgstr "Deaktiviert"
+
+#: ../src/org/openstreetmap/josm/plugins/extendedclipboard/NodeTemplateListDialog.java:765
 msgid "Sort list alphabetically"
 msgstr "Liste alphabetisch sortieren"
 
-#: ../src/org/openstreetmap/josm/plugins/extendedclipboard/NodeTemplateListDialog.java:633
+#: ../src/org/openstreetmap/josm/plugins/extendedclipboard/NodeTemplateListDialog.java:903
 msgid "Tree"
 msgstr ""
 
-#: ../src/org/openstreetmap/josm/plugins/extendedclipboard/NodeTemplateListDialog.java:633
+#: ../src/org/openstreetmap/josm/plugins/extendedclipboard/NodeTemplateListDialog.java:903
 msgid "Waste Basket"
 msgstr ""
 
-#: ../src/org/openstreetmap/josm/plugins/extendedclipboard/NodeTemplateListDialog.java:633
+#: ../src/org/openstreetmap/josm/plugins/extendedclipboard/NodeTemplateListDialog.java:903
 msgid "Bench"
 msgstr ""
 
-#: ../src/org/openstreetmap/josm/plugins/extendedclipboard/NodeTemplateListDialog.java:695
+#: ../src/org/openstreetmap/josm/plugins/extendedclipboard/NodeTemplateListDialog.java:980
 msgid "Create new node templates from selected nodes"
 msgstr "Neue Punktevorlagen aus den ausgewählten Punkten erstellen"
 
-#: ../src/org/openstreetmap/josm/plugins/extendedclipboard/NodeTemplateListDialog.java:735
+#: ../src/org/openstreetmap/josm/plugins/extendedclipboard/NodeTemplateListDialog.java:1020
 msgid "Edit name of selected node template"
 msgstr "Den Namen der ausgewählten Punktevorlage bearbeiten"
 
-#: ../src/org/openstreetmap/josm/plugins/extendedclipboard/NodeTemplateListDialog.java:769
+#: ../src/org/openstreetmap/josm/plugins/extendedclipboard/NodeTemplateListDialog.java:1054
 msgid "Copy new node from selected template to JOSM clipboard"
 msgstr "Neuen Punkt aus der Vorlage in die JOSM-Zwischenablage kopieren"
 
-#: ../src/org/openstreetmap/josm/plugins/extendedclipboard/NodeTemplateListDialog.java:795
+#: ../src/org/openstreetmap/josm/plugins/extendedclipboard/NodeTemplateListDialog.java:1080
 msgid ""
 "Create new node from selected template and past it directly into the map view"
-msgstr ""
-"Neuen Punkt aus der Vorlage erstellen und direkt in die Karte einfügen"
+msgstr "Neuen Punkt aus der Vorlage erstellen und direkt in die Karte einfügen"
 
-#: ../src/org/openstreetmap/josm/plugins/extendedclipboard/NodeTemplateListDialog.java:820
+#: ../src/org/openstreetmap/josm/plugins/extendedclipboard/NodeTemplateListDialog.java:1105
 msgid "Delete selected node template"
 msgstr "Ausgewählte Punktevorlage löschen"
