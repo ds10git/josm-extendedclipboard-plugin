@@ -227,6 +227,8 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
         }
         
         t.setNotForNodes(!t.isNotForNodes());
+        
+        updateBtnEnabledState();
       }
     });
     
