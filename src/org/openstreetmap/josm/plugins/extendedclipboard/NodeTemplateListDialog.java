@@ -100,6 +100,7 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
   private static final String PREF_KEY_KEYS = "NodeTemplateListDialog.nodeTemplates.keys";
   private static final String PREF_KEY_DUAL_LIST = "NodeTemplateListDialog.nodeTemplates.dualList";
   private static final String PREF_KEY_AUTO_TAG_SELECTION = "NodeTemplateListDialog.nodeTemplates.autoTagSelection";
+  private static final String PREF_KEY_AUTO_TAG_SELECTION_AUTO_ENABLE = "NodeTemplateListDialog.nodeTemplates.autoTagSelectionAutoEnable";
   private static final String PREF_KEY_TAG_SELECTION = "NodeTemplateListDialog.nodeTemplates.tagSelection";
   private static final String PREF_KEY_SELECTION_AUTO_OFF = "NodeTemplateListDialog.nodeTemplates.useOnSelectionAutoOff";
   
@@ -286,23 +287,25 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
               
               while(knownClickCount.getAndSet(clickCount) != clickCount) {
                 try {
-                  Thread.sleep(50);
+                  Thread.sleep(200);
                 } catch (InterruptedException e) {
                   // intentionally ignore
                 }
               }
               
               SwingUtilities.invokeLater(() -> {
-                if (SwingUtilities.isLeftMouseButton(e) && (knownClickCount.get() >= 1 && knownClickCount.get() <= 3)) {
-                  if(knownClickCount.get() == 1 && Config.getPref().getBoolean(PREF_KEY_AUTO_TAG_SELECTION, true)) {
+                if (SwingUtilities.isLeftMouseButton(e) && (knownClickCount.get() >= 1 && knownClickCount.get() <= 4)) {
+                  if((knownClickCount.get() == 1 || knownClickCount.get() == 4) && Config.getPref().getBoolean(PREF_KEY_AUTO_TAG_SELECTION, true)) {
                     if(nodeList.getSelectedIndex() != -1 || nodeList2.getSelectedIndex() != -1) {
                       handleSelection(MainApplication.getLayerManager().getEditDataSet().getSelected(), Config.getPref().getBoolean(PREF_KEY_TAG_SELECTION, true));
                       
-                      if(!autoTagSelection.isSelected()) {
-                        autoTagSelection.setSelected(true);
-                      }
-                      else {
-                        checkStartTimer();
+                      if(knownClickCount.get() == 4 || (e.getModifiersEx() & KeyEvent.ALT_DOWN_MASK) == KeyEvent.ALT_DOWN_MASK || Config.getPref().getBoolean(PREF_KEY_AUTO_TAG_SELECTION_AUTO_ENABLE, true)) {
+                        if(!autoTagSelection.isSelected()) {
+                          autoTagSelection.setSelected(true);
+                        }
+                        else {
+                          checkStartTimer();
+                        }
                       }
                     }
                   }
@@ -525,6 +528,12 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
             
             prefMenu.add(item);
             
+            item = new JCheckBoxMenuItem(tr("Enable auto tagging when selecting template"));
+            item.setSelected(Config.getPref().getBoolean(PREF_KEY_AUTO_TAG_SELECTION_AUTO_ENABLE, true));
+            item.addActionListener(a -> Config.getPref().putBoolean(PREF_KEY_AUTO_TAG_SELECTION_AUTO_ENABLE, !Config.getPref().getBoolean(PREF_KEY_AUTO_TAG_SELECTION_AUTO_ENABLE, true)));
+            
+            prefMenu.add(item);
+            
             item = new JCheckBoxMenuItem(tr("Add tags to selected objects when selecting template"));
             item.setSelected(Config.getPref().getBoolean(PREF_KEY_TAG_SELECTION, true));
             item.addActionListener(a -> Config.getPref().putBoolean(PREF_KEY_TAG_SELECTION, !Config.getPref().getBoolean(PREF_KEY_TAG_SELECTION, true)));
@@ -553,6 +562,8 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
             
             JCheckBoxMenuItem timerOff = new JCheckBoxMenuItem(tr("disabled"), timer == 0);
             timerOff.addActionListener(timerAction);
+            JCheckBoxMenuItem timer3 = new JCheckBoxMenuItem("3", timer == 3);
+            timer3.addActionListener(timerAction);
             JCheckBoxMenuItem timer5 = new JCheckBoxMenuItem("5", timer == 5);
             timer5.addActionListener(timerAction);
             JCheckBoxMenuItem timer10 = new JCheckBoxMenuItem("10", timer == 10);
@@ -563,6 +574,7 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
             timer30.addActionListener(timerAction);
             
             autoOff.add(timerOff);
+            autoOff.add(timer3);
             autoOff.add(timer5);
             autoOff.add(timer10);
             autoOff.add(timer20);
