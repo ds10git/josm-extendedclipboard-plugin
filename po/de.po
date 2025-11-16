@@ -3,12 +3,12 @@
 # This file is distributed under the same license as the PACKAGE package.
 # FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
 #
-#, fuzzy
+#,fuzzy
 msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2025-11-16 13:37+0100\n"
+"POT-Creation-Date: 2025-11-16 17:10+0100\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\\nLanguage: de\n"
@@ -167,8 +167,8 @@ msgid "Add tags to selected objects when selecting template"
 msgstr "Tags zu ausgewählten Objekten hinzufügen, wenn Vorlage ausgewählt wird"
 
 #: ../src/org/openstreetmap/josm/plugins/extendedclipboard/NodeTemplateListDialog.java:543
-msgid "Auto off timer for selection"
-msgstr "Abschalttimer für Auswahl"
+msgid "Auto off timer for auto tagging"
+msgstr "Abschalttimer für Auto-Tagging"
 
 #: ../src/org/openstreetmap/josm/plugins/extendedclipboard/NodeTemplateListDialog.java:563
 msgid "disabled"
@@ -210,6 +210,3 @@ msgstr "Neuen Punkt aus der Vorlage erstellen und direkt in die Karte einfügen"
 #: ../src/org/openstreetmap/josm/plugins/extendedclipboard/NodeTemplateListDialog.java:1239
 msgid "Delete selected node template"
 msgstr "Ausgewählte Punktevorlage löschen"
-
-#~ msgid "Use on selection"
-#~ msgstr "Auf Auswahl anwenden"

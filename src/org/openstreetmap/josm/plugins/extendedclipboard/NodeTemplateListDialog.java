@@ -540,7 +540,7 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
             
             prefMenu.add(item);
             
-            JMenu autoOff = new JMenu(tr("Auto off timer for selection"));
+            JMenu autoOff = new JMenu(tr("Auto off timer for auto tagging"));
             
             int timer = Config.getPref().getInt(PREF_KEY_SELECTION_AUTO_OFF, 10);
             
