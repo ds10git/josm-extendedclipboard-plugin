@@ -23,14 +23,20 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import javax.swing.AbstractAction;
 import javax.swing.Action;
+import javax.swing.BorderFactory;
 import javax.swing.DefaultListModel;
+import javax.swing.JButton;
+import javax.swing.JCheckBoxMenuItem;
 import javax.swing.JList;
 import javax.swing.JMenuItem;
 import javax.swing.JOptionPane;
+import javax.swing.JPanel;
 import javax.swing.JPopupMenu;
 import javax.swing.KeyStroke;
 import javax.swing.ListSelectionModel;
 import javax.swing.SwingUtilities;
+import javax.swing.event.PopupMenuEvent;
+import javax.swing.event.PopupMenuListener;
 
 import org.openstreetmap.josm.actions.JosmAction;
 import org.openstreetmap.josm.actions.relation.SelectInRelationListAction;
@@ -62,6 +68,7 @@ public class ExtendedClipboardDialog extends ToggleDialog implements DataSelecti
   private static final DefaultListModel<ClipboardEntry> EMPTY_MODEL = new DefaultListModel<>();
   private static final int MAX_MODEL_SIZE = 10;
   private static final String PREF_NAMES = "extendedclipboard.pref.names";
+  private static final String PREF_CREATE_CLIPBOARD_ON_ADDING = "extendedclipboard.createClipboardOnAdding";
   
   private final JList<ClipboardEntry> clipboard;
   private final Hashtable<OsmDataLayer, DefaultListModel<ClipboardEntry>> modelTable;
@@ -104,6 +111,7 @@ public class ExtendedClipboardDialog extends ToggleDialog implements DataSelecti
   private final SelectMembersAction selectRelationMembers = new SelectMembersAction(false);
   
   private boolean iconAddToNewList = true;
+  private JPopupMenu prefMenu;
   
   public ExtendedClipboardDialog() {
     super(tr("Extended Clipboard"), "extendedclipboard", tr("Store selection for later reselection."),
@@ -276,6 +284,54 @@ public class ExtendedClipboardDialog extends ToggleDialog implements DataSelecti
     
     Component c = createLayout(clipboard, true, Arrays.asList(this.btnAdd, this.btnRemove, this.btnClear, this.btnReverse, this.btnRestore, this.btnNewClipboard, this.btnEdit, this.btnDelete));
     clipboard.setSize(c.getSize());
+    
+    for(int i = 0; i < titleBar.getComponentCount(); i++) {
+      if(titleBar.getComponent(i) instanceof JPanel) {
+        JButton settings = new JButton(ImageProvider.get("preference", ImageProvider.ImageSizes.SMALLICON));
+        settings.setBorder(BorderFactory.createEmptyBorder());
+        settings.addActionListener(e -> {
+          JPopupMenu m = prefMenu;
+          
+          if(m != null) {
+            m.setVisible(false);
+          }
+          else {
+            prefMenu = new JPopupMenu();
+            prefMenu.addPopupMenuListener(new PopupMenuListener() {
+              @Override
+              public void popupMenuWillBecomeVisible(PopupMenuEvent e) {}
+              @Override
+              public void popupMenuWillBecomeInvisible(PopupMenuEvent e) {
+                new Thread() {
+                  public void run() {
+                    try {
+                      Thread.sleep(500);
+                    } catch (InterruptedException e) {
+                      // ignore
+                    }
+                    
+                    prefMenu = null;
+                  }
+                }.start();
+              }
+              @Override
+              public void popupMenuCanceled(PopupMenuEvent e) {}
+            });
+            
+            JCheckBoxMenuItem item = new JCheckBoxMenuItem(tr("Create new clipboard when adding object again"));
+            item.setSelected(Config.getPref().getBoolean(PREF_CREATE_CLIPBOARD_ON_ADDING, true));
+            item.addActionListener(a -> Config.getPref().putBoolean(PREF_CREATE_CLIPBOARD_ON_ADDING, !Config.getPref().getBoolean(PREF_CREATE_CLIPBOARD_ON_ADDING, true)));
+            
+            prefMenu.add(item);
+            prefMenu.show((JButton)e.getSource(), ((JButton)e.getSource()).getWidth(), ((JButton)e.getSource()).getHeight());
+          }
+        });
+        
+        titleBar.add(settings, i+2);
+        
+        break;
+      }
+    }    
   }
   
   private void createSelectionPopupMenu() {
@@ -391,12 +447,14 @@ public class ExtendedClipboardDialog extends ToggleDialog implements DataSelecti
   
   private void updateBtnAddIconAndTooltip(DataSet ds, boolean ctrl_down) {
     if(clipboard != null && model != null && ds != null) {
-      if((iconAddToNewList && clipboard.getSelectedIndex() >= 0 && !clipboard.getSelectedValue().containsAll(ds.getSelected()))) {
+      if((iconAddToNewList && clipboard.getSelectedIndex() >= 0 && (!clipboard.getSelectedValue().containsAll(ds.getSelected()) ||
+          !Config.getPref().getBoolean(PREF_CREATE_CLIPBOARD_ON_ADDING, true)))) {
         btnAdd.setIcon(((ImageResource)add.getValue("ImageResource")).getImageIconBounded(ImageProvider.ImageSizes.SIDEBUTTON.getImageDimension()));
         btnAdd.setToolTipText((String)add.getValue(Action.SHORT_DESCRIPTION));
         iconAddToNewList = false;
       }
-      else if(ctrl_down || (!iconAddToNewList && (clipboard.getSelectedIndex() < 0 || clipboard.getSelectedValue().containsAll(ds.getSelected())))) {
+      else if(ctrl_down || (!iconAddToNewList && (clipboard.getSelectedIndex() < 0 || (clipboard.getSelectedValue().containsAll(ds.getSelected())
+          && Config.getPref().getBoolean(PREF_CREATE_CLIPBOARD_ON_ADDING, true))))) {
         btnAdd.setIcon(((ImageResource)addNew.getValue("ImageResource")).getImageIconBounded(ImageProvider.ImageSizes.SIDEBUTTON.getImageDimension()));
         btnAdd.setToolTipText((String)addNew.getValue(Action.SHORT_DESCRIPTION));
         iconAddToNewList = true;
@@ -609,31 +667,6 @@ public class ExtendedClipboardDialog extends ToggleDialog implements DataSelecti
     }
   }
   
-  /*class AngleAction extends JosmAction {
-    public AngleAction() {
-      super(tr("Get angle from statusbar"),  "dialogs/add", tr("Get angle from statusbar"),
-          Shortcut.registerShortcut("extendedclipboard.angle", tr("Get angle"), KeyEvent.VK_H,
-                  Shortcut.DIRECT), false);
-    }
-
-    @Override
-    public void actionPerformed(ActionEvent e) {
-      Collection<Node> nodes = OsmDataManager.getInstance().getActiveDataSet().getSelectedNodes();
-      
-      if(nodes.size() == 1) {
-        String text = ((JLabel)((JComponent)MainApplication.getMap().statusLine.getComponent(2)).getComponent(1)).getText();
-        
-        if(!text.isBlank()) {
-          try {
-            nodes.forEach(n -> n.put("direction", String.valueOf(Math.round(Float.parseFloat(text.substring(0,text.length()-2).strip().replace(",", "."))))));
-          }catch(NumberFormatException nfe) {
-            nfe.printStackTrace();
-          }
-        }
-      }
-    }
-  }*/
-  
   class AddAction extends JosmAction {
     AtomicBoolean isPerforming = new AtomicBoolean(false);
     AddAction() {
@@ -652,7 +685,8 @@ public class ExtendedClipboardDialog extends ToggleDialog implements DataSelecti
           final Collection<OsmPrimitive> selection = OsmDataManager.getInstance().getActiveDataSet().getSelected();
           
           if((entry == null || ((e.getModifiers() & ActionEvent.CTRL_MASK) == ActionEvent.CTRL_MASK)
-              || clipboard.getSelectedIndex() < 0 || clipboard.getSelectedValue().containsAll(selection)
+              || clipboard.getSelectedIndex() < 0 || (clipboard.getSelectedValue().containsAll(selection)
+                  && Config.getPref().getBoolean(PREF_CREATE_CLIPBOARD_ON_ADDING, true))
               ) && model != null) {
             addNewClipboardEntry();
           }

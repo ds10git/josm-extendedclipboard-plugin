@@ -17,8 +17,6 @@ import java.awt.event.ItemEvent;
 import java.awt.event.KeyEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
-import java.beans.PropertyChangeEvent;
-import java.beans.PropertyChangeListener;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -53,8 +51,6 @@ import javax.swing.JScrollPane;
 import javax.swing.JSeparator;
 import javax.swing.ListSelectionModel;
 import javax.swing.SwingUtilities;
-import javax.swing.event.AncestorEvent;
-import javax.swing.event.AncestorListener;
 import javax.swing.event.ListSelectionListener;
 import javax.swing.event.PopupMenuEvent;
 import javax.swing.event.PopupMenuListener;
@@ -87,6 +83,7 @@ import org.openstreetmap.josm.gui.layer.MainLayerManager.ActiveLayerChangeListen
 import org.openstreetmap.josm.gui.layer.OsmDataLayer;
 import org.openstreetmap.josm.gui.tagging.presets.TaggingPreset;
 import org.openstreetmap.josm.gui.tagging.presets.TaggingPresetType;
+import org.openstreetmap.josm.gui.util.KeyPressReleaseListener;
 import org.openstreetmap.josm.spi.preferences.Config;
 import org.openstreetmap.josm.spi.preferences.PreferenceChangedListener;
 import org.openstreetmap.josm.tools.GBC;
@@ -144,6 +141,7 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
   private int timer;
   private Thread autoOffTimer;
   private JLabel autoOffLabel;
+  private KeyPressReleaseListener keyListener;
   
   private boolean autoTagDisabled;
   
@@ -399,6 +397,7 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
     autoTagSelection.setEnabled(false);
     autoTagSelection.addItemListener(e -> {
       if(e.getStateChange() == ItemEvent.SELECTED) {
+        MainApplication.getMap().keyDetector.addKeyListener(keyListener);
         checkStartTimer();
       }
       
@@ -419,9 +418,9 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
     autoOffLabel = new JLabel(tr("for {0} seconds"));
     autoOffLabel.setVisible(false);
     
-    JPanel selection = new JPanel(new BorderLayout(10, 0));
-    selection.add(autoTagSelection, BorderLayout.WEST);
-    selection.add(autoOffLabel, BorderLayout.EAST);
+    JPanel autoTagPanel = new JPanel(new BorderLayout(10, 0));
+    autoTagPanel.add(autoTagSelection, BorderLayout.WEST);
+    autoTagPanel.add(autoOffLabel, BorderLayout.EAST);
     autoTagSelection.setVisible(Config.getPref().getBoolean(PREF_KEY_AUTO_TAG_SELECTION, true));
     
     prefListener = e -> {
@@ -433,22 +432,20 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
         model2.clear();
       }
       
-      panelBounds.setBounds(0, 0, 0, 0);
-      refillLists();
+      refillLists(true);
     };
     
     prefListener2 = e -> {
       if(Boolean.parseBoolean((String)e.getNewValue().getValue())) {
-        selection.setVisible(true);
+        autoTagPanel.setVisible(true);
       }
       else {
-        selection.setVisible(false);
+        autoTagPanel.setVisible(false);
       }
       
-      p.invalidate();
+      titleBar.invalidate();
     };
     
-    p.add(selection, GBC.std(1,1).span(3).fill(GBC.HORIZONTAL));
     p.add(west, GBC.std(1, 2).fill());
     p.add(middle, GBC.std(2, 2).fill(GBC.VERTICAL));
     p.add(east, GBC.std(3, 2).fill());
@@ -459,29 +456,8 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
         refillLists();
       }
     });
-    
-    p.addPropertyChangeListener("ancestor", new PropertyChangeListener() {
-      @Override
-      public void propertyChange(PropertyChangeEvent evt) {
-        if(evt.getNewValue() != null && (panelBounds == null || !panelBounds.equals(p.getBounds()))) {
-          west.setPreferredSize(new Dimension((p.getWidth()-middle.getPreferredSize().width)/2,10));
-          east.setPreferredSize(west.getPreferredSize());
-        }
-      }
-    });
         
     createLayout(p, false, Arrays.asList(this.btnAdd, this.btnCopy, this.btnPaste, this.btnEdit, this.btnDelete));
-    p.addAncestorListener(new AncestorListener() {      
-      @Override
-      public void ancestorRemoved(AncestorEvent arg0) {}
-      @Override
-      public void ancestorMoved(AncestorEvent arg0) {}
-      @Override
-      public void ancestorAdded(AncestorEvent arg0) {
-        refillLists();
-        p.removeAncestorListener(this);
-      }
-    });
     
     for(int i = 0; i < titleBar.getComponentCount(); i++) {
       if(titleBar.getComponent(i) instanceof JPanel) {
@@ -589,8 +565,10 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
         titleBar.add(settings, i+2);
         
         break;
-      }
+      }      
     }
+    
+    titleBar.add(autoTagPanel, GBC.std(0,1).insets(0, 0, 5, 0).span(GBC.REMAINDER).fill(GBC.HORIZONTAL));
     
     p.addComponentListener(new ComponentAdapter() {
       @Override
@@ -605,7 +583,34 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
       }
     });
     
+    final Shortcut disableAutoTagging = Shortcut.registerShortcut(tr("Node Template List: Deactivate auto tagging"), tr("Node Template List: Deactivate auto tagging"), KeyEvent.VK_V, Shortcut.DIRECT);
+    
+    keyListener = new KeyPressReleaseListener() {
+      @Override
+      public void doKeyPressed(KeyEvent e) {
+        if(disableAutoTagging.isEvent(e)) {
+          autoTagSelection.setSelected(false);
+          MainApplication.getMap().keyDetector.removeKeyListener(this);
+        }
+      }
+
+      @Override
+      public void doKeyReleased(KeyEvent e) {}
+    };
+    
     load();
+  }
+  
+  @Override
+  public void showDialog() {
+    super.showDialog();
+    
+    if(panelBounds == null || !panelBounds.equals(p.getBounds())) {
+      west.setPreferredSize(new Dimension((p.getWidth()-middle.getPreferredSize().width)/2,10));
+      east.setPreferredSize(west.getPreferredSize());
+    }
+    
+    refillLists(true);
   }
   
   private void checkStartTimer() {
@@ -773,14 +778,18 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
         boolean isNode = (((TaggingPreset) parent).types.contains(TaggingPresetType.NODE));
         
         EastNorth center = MainApplication.getMap().mapView.getCenter();
-        Way w = null;
+        
         Node n1 = new Node(center);
+        OsmDataManager.getInstance().getActiveDataSet().addPrimitive(n1);
+        
         Node n2 = null;
         OsmPrimitive toUse = n1;
         
+        Way w = null;
+        
         if(!isNode) {          
           n2 = new Node(center.add(5, 5));
-          OsmDataManager.getInstance().getActiveDataSet().addPrimitive(n1);
+          
           OsmDataManager.getInstance().getActiveDataSet().addPrimitive(n2);
          
           w = new Way();
@@ -790,7 +799,7 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
           OsmDataManager.getInstance().getActiveDataSet().addPrimitive(w);
         }
         
-        OsmDataManager.getInstance().getActiveDataSet().setSelected(w);
+        OsmDataManager.getInstance().getActiveDataSet().setSelected(toUse);
         parent.actionPerformed(e);
 
         if(!toUse.getKeys().isEmpty()) {
@@ -823,7 +832,7 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
         
         OsmDataManager.getInstance().getActiveDataSet().clearSelection();
                 
-        refillLists();
+        refillLists(true);
         OsmDataManager.getInstance().getActiveDataSet().setSelected(curSel);
         autoTagDisabled = false;
       }
@@ -1131,7 +1140,7 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
           }
         }
       } finally {
-        refillLists();
+        refillLists(true);
         updateBtnEnabledState();
         isPerforming.set(false);
       }
@@ -1257,7 +1266,7 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
         nodeList.setSelectedIndex(index-1);
       }
       
-      refillLists();
+      refillLists(true);
       updateBtnEnabledState();
     }
 
