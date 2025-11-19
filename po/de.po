@@ -212,7 +212,7 @@ msgstr "Neuen Punkt aus der Vorlage in die JOSM-Zwischenablage kopieren"
 
 #: ../src/org/openstreetmap/josm/plugins/extendedclipboard/NodeTemplateListDialog.java:1362
 msgid ""
-"Create new node from selected template and past it directly into the map view"
+"Create new node from selected template and paste it directly into the map view"
 msgstr "Neuen Punkt aus der Vorlage erstellen und direkt in die Karte einfügen"
 
 #: ../src/org/openstreetmap/josm/plugins/extendedclipboard/NodeTemplateListDialog.java:1384

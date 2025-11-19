@@ -133,9 +133,9 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
   private final SideButton btnPaste;
   private final SideButton btnDelete;
 
-  private final JPopupMenu popupMenu = new JPopupMenu();
-  private final JMenu importMenu = new JMenu(tr("Import node template from preset"));
-  private final JMenu setIconMenu = new JMenu(tr("Set icon for selected node template from preset"));
+  private final JPopupMenu popupMenu;
+  private final JMenu importMenu;
+  private final JMenu setIconMenu;
   
   private PreferenceChangedListener prefListener;
   private PreferenceChangedListener prefListener2;
@@ -198,7 +198,6 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
     super(tr("Node Template List"), "nodes", tr("Store node tags for recration of nodes with the same tags"),
         Shortcut.registerShortcut("NodeTemplateList.nodetemplatelist", tr("Windows: {0}", tr("Node Template List")),
             KeyEvent.VK_B, Shortcut.ALT_CTRL_SHIFT), 150, true);
-    importMenu.setIcon(ImageProvider.get("download", ImageSizes.SMALLICON));
     
     final DefaultListCellRenderer renderer = new DefaultListCellRenderer() {
       @SuppressWarnings("rawtypes")
@@ -215,6 +214,12 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
           return label;
       }
     };
+    
+    popupMenu = new JPopupMenu();
+    importMenu = new JMenu(tr("Import node template from preset"));
+    importMenu.setIcon(ImageProvider.get("download", ImageSizes.SMALLICON));
+    setIconMenu = new JMenu(tr("Set icon for selected node template from preset"));
+    setIconMenu.setIcon(ImageProvider.get("presets/misc/no_icon", ImageProvider.ImageSizes.MENU));
     
     model = new DefaultListModel<>();
     models.add(model);
@@ -393,6 +398,10 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
     }
 
     autoTagActionListener = e -> {
+      if(e != null && ((e.getModifiers() & ActionEvent.ALT_MASK) == ActionEvent.ALT_MASK)) {
+        autoTagSelection.setSelected(true);
+      }
+      
       if(autoTagSelection.isSelected()) {
         if(e != null) {
           noAutoOffTimer = ((e.getModifiers() & ActionEvent.ALT_MASK) == ActionEvent.ALT_MASK) && ((e.getModifiers() & ActionEvent.SHIFT_MASK) == ActionEvent.SHIFT_MASK);
@@ -525,8 +534,10 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
             prefMenu.add(item);
             prefMenu.addSeparator();
             
+            boolean autoTag = Config.getPref().getBoolean(PREF_KEY_AUTO_TAG_SELECTION, true);
+            
             item = new JCheckBoxMenuItem(tr("Auto tag objects that are selected from template"));
-            item.setSelected(Config.getPref().getBoolean(PREF_KEY_AUTO_TAG_SELECTION, true));
+            item.setSelected(autoTag);
             item.addActionListener(a -> Config.getPref().putBoolean(PREF_KEY_AUTO_TAG_SELECTION, !Config.getPref().getBoolean(PREF_KEY_AUTO_TAG_SELECTION, true)));
             
             prefMenu.add(item);
@@ -534,11 +545,12 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
             item = new JCheckBoxMenuItem(tr("Enable auto tagging when selecting template"));
             item.setSelected(Config.getPref().getBoolean(PREF_KEY_AUTO_TAG_SELECTION_AUTO_ENABLE, true));
             item.addActionListener(a -> Config.getPref().putBoolean(PREF_KEY_AUTO_TAG_SELECTION_AUTO_ENABLE, !Config.getPref().getBoolean(PREF_KEY_AUTO_TAG_SELECTION_AUTO_ENABLE, true)));
+            item.setEnabled(autoTag);
             
             prefMenu.add(item);
             
-            
             JMenu autoOff = new JMenu(tr("Auto off timer for auto tagging"));
+            autoOff.setEnabled(autoTag);
             
             int timer = Config.getPref().getInt(PREF_KEY_SELECTION_AUTO_OFF, 10);
             
@@ -1051,13 +1063,16 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
     sortItem.putValue(Action.SMALL_ICON, ImageProvider.get("dialogs", "sort", ImageSizes.SMALLICON));
     
     popupMenu.add(importMenu);
-    popupMenu.add(setIconMenu);
     popupMenu.add(sortItem);
+    popupMenu.addSeparator();
+    popupMenu.add(copy);
+    popupMenu.add(paste);
+    popupMenu.addSeparator();
     popupMenu.add(forWays);
     popupMenu.add(notForNodes);
-    popupMenu.add(copy);
+    popupMenu.addSeparator();
+    popupMenu.add(setIconMenu);
     popupMenu.add(edit);
-    popupMenu.add(paste);
     popupMenu.add(delete);
   }
   
@@ -1189,15 +1204,16 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
       }
     }
     else {
-      final String[] nameArr = {tr("Tree"),tr("Waste Basket"),tr("Bench")};
-      final String[] iconArr = {"presets/landmark/trees_broad_leaved.svg", "presets/service/recycling/waste_basket.svg", "presets/leisure/bench.svg"};
-      final Tag[] tags = {new Tag("natural", "tree"), new Tag("amenity", "waste_basket"), new Tag("amenity", "bench")};
+      final String[] nameArr = {tr("Tree"), tr("Tree Row"), tr("Waste Basket"), tr("Bench"),  tr("Hedge")};
+      final String[] iconArr = {"presets/landmark/trees_broad_leaved.svg", "presets/landmark/tree_row.svg", "presets/service/recycling/waste_basket.svg", "presets/leisure/bench.svg", "presets/barrier/hedge.svg"};
+      final Tag[] tags = {new Tag("natural", "tree"), new Tag("natural", "tree_row"), new Tag("amenity", "waste_basket"), new Tag("amenity", "bench"), new Tag("barrier", "hedge")};
+      final boolean[] forWays = {false, true, false, false, true};
       
       for(int i = 0; i < tags.length; i++) {
         LinkedHashMap<String, String> map = new LinkedHashMap<>();
         map.put(tags[i].getKey(), tags[i].getValue());
         
-        model.addElement(new NodeTemplate(nameArr[i], iconArr[i], map, false, false));
+        model.addElement(new NodeTemplate(nameArr[i], iconArr[i], map, forWays[i], forWays[i]));
       }
       
       sortItem.actionPerformed(null);
@@ -1359,7 +1375,7 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
 
   class PasteAction extends AbstractPasteAction {
     PasteAction() {
-      super(tr("Create new node from selected template and past it directly into the map view"), /* ICON() */ "paste", tr("Create new node from selected template and past it directly into the map view"), /* Shortcut */ null, false);
+      super(tr("Create new node from selected template and paste it directly into the map view"), /* ICON() */ "paste", tr("Create new node from selected template and paste it directly into the map view"), /* Shortcut */ null, false);
     }
     
     @Override
