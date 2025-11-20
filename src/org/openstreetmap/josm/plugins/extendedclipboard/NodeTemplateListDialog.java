@@ -7,8 +7,10 @@ import java.awt.BorderLayout;
 import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.Graphics;
+import java.awt.Graphics2D;
 import java.awt.GridBagLayout;
 import java.awt.Rectangle;
+import java.awt.color.ColorSpace;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.awt.event.ComponentAdapter;
@@ -16,6 +18,8 @@ import java.awt.event.ComponentEvent;
 import java.awt.event.KeyEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
+import java.awt.image.BufferedImage;
+import java.awt.image.ColorConvertOp;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -34,7 +38,6 @@ import javax.swing.Action;
 import javax.swing.BorderFactory;
 import javax.swing.DefaultListCellRenderer;
 import javax.swing.DefaultListModel;
-import javax.swing.Icon;
 import javax.swing.ImageIcon;
 import javax.swing.JButton;
 import javax.swing.JCheckBox;
@@ -126,6 +129,7 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
   private final DeleteAction delete;
   private final JCheckBoxMenuItem forWays;
   private final JCheckBoxMenuItem notForNodes;
+  private final JCheckBoxMenuItem onlyForUntaggedObjects;
 
   private final SideButton btnAdd;
   private final SideButton btnEdit;
@@ -139,6 +143,9 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
   
   private PreferenceChangedListener prefListener;
   private PreferenceChangedListener prefListener2;
+  private PreferenceChangedListener prefListener3;
+  
+  private boolean wayTaggingPossible;
   
   private int timer;
   private Thread autoOffTimer;
@@ -193,7 +200,7 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
     
     nodeLists.add(nodeList2);
   }
-
+  
   public NodeTemplateListDialog() {
     super(tr("Node Template List"), "nodes", tr("Store node tags for recration of nodes with the same tags"),
         Shortcut.registerShortcut("NodeTemplateList.nodetemplatelist", tr("Windows: {0}", tr("Node Template List")),
@@ -206,20 +213,27 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
           JLabel label = (JLabel) super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
           
           if(value instanceof NodeTemplate) {
-            if(((NodeTemplate) value).icon != null) {
-              label.setIcon(((NodeTemplate) value).icon);
+            NodeTemplate t = (NodeTemplate)value;
+            
+            if(t.icon != null) {
+              label.setIcon(t.icon);
+              label.setDisabledIcon(t.iconDisabled);
             }
+            
+            label.setEnabled(t.isEnabled(wayTaggingPossible));
           }
           
           return label;
       }
     };
     
+    wayTaggingPossible = Config.getPref().getBoolean(PREF_KEY_TAG_SELECTION, true) ||Config.getPref().getBoolean(PREF_KEY_AUTO_TAG_SELECTION, true);
+    
     popupMenu = new JPopupMenu();
     importMenu = new JMenu(tr("Import node template from preset"));
-    importMenu.setIcon(ImageProvider.get("download", ImageSizes.SMALLICON));
+    importMenu.setIcon(ImageProvider.get("download", ImageSizes.MENU));
     setIconMenu = new JMenu(tr("Set icon for selected node template from preset"));
-    setIconMenu.setIcon(ImageProvider.get("presets/misc/no_icon", ImageProvider.ImageSizes.MENU));
+    setIconMenu.setIcon(ImageProvider.get("imagery_menu", ImageProvider.ImageSizes.MENU));
     
     model = new DefaultListModel<>();
     models.add(model);
@@ -247,17 +261,23 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
     btnPaste = new SideButton(paste, false);
     btnDelete = new SideButton(delete, false);
     
-    forWays = new JCheckBoxMenuItem(tr("Allow usage for ways on selection"), ImageProvider.get(OsmPrimitiveType.WAY));
+    final ImageIcon checked = ImageProvider.get("check_selected", ImageProvider.ImageSizes.SMALLICON);
+    
+    forWays = new JCheckBoxMenuItem(tr("Allow usage for ways on selection"));
+    CheckBoxMenuIcon.createIcon(forWays, ImageProvider.get(OsmPrimitiveType.WAY), checked);
     forWays.addActionListener(new ActionListener() {
       @Override
       public void actionPerformed(ActionEvent e) {
         NodeTemplate t = getSelectedTemplate();
         
         t.setForWays(!t.isForWays());
+        
+        repaintSelectedRow();
       }
     });
     
-    notForNodes = new JCheckBoxMenuItem(tr("Not for nodes"), ImageProvider.get("not_for_nodes", ImageProvider.ImageSizes.MENU));
+    notForNodes = new JCheckBoxMenuItem(tr("Not for nodes"));
+    CheckBoxMenuIcon.createIcon(notForNodes, ImageProvider.get("not_for_nodes", ImageProvider.ImageSizes.MENU), checked);
     notForNodes.addActionListener(new ActionListener() {
       @Override
       public void actionPerformed(ActionEvent e) {
@@ -266,6 +286,22 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
         t.setNotForNodes(!t.isNotForNodes());
         
         updateBtnEnabledState();
+        repaintSelectedRow();
+      }
+    });
+    
+    
+    onlyForUntaggedObjects = new JCheckBoxMenuItem(tr("Only for untagged objects"));
+    CheckBoxMenuIcon.createIcon(onlyForUntaggedObjects, ImageProvider.get("presets/misc/no_icon", ImageProvider.ImageSizes.MENU), checked);
+    onlyForUntaggedObjects.addActionListener(new ActionListener() {
+      @Override
+      public void actionPerformed(ActionEvent e) {
+        NodeTemplate t = getSelectedTemplate();
+        
+        t.setOnlyForUntaggedObjects(!t.isOnlyForUntaggedObjects());
+        
+        updateBtnEnabledState();
+        repaintSelectedRow();
       }
     });
     
@@ -362,13 +398,15 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
             updateBtnEnabledState();
             
             forWays.setEnabled(((JList<?>)e.getSource()).getSelectedIndex() != -1);
-            notForNodes.setEnabled(((JList<?>)e.getSource()).getSelectedIndex() != -1);
+            notForNodes.setEnabled(forWays.isEnabled());
+            onlyForUntaggedObjects.setSelected(forWays.isEnabled());
             
             NodeTemplate selected = getSelectedTemplate();
             
             if(selected != null) {
               forWays.setSelected(selected.isForWays());
               notForNodes.setSelected(selected.isNotForNodes());
+              onlyForUntaggedObjects.setSelected(selected.isOnlyForUntaggedObjects());
             }
             
             popupMenu.show(e.getComponent(), e.getPoint().x, e.getPoint().y);
@@ -383,13 +421,7 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
         clearNodeTemplateSelection(e.getSource());
       }
       
-      if(!isNodeTemplateSelected()) {
-        setAutoTagSelectionSelected(false);
-        autoTagSelection.setEnabled(false);
-      }
-      else {
-        autoTagSelection.setEnabled(true);
-      }
+      updateAutoTagEnabledState();
     };
     
     for(JList<NodeTemplate> l : nodeLists) {
@@ -446,7 +478,12 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
         autoTagPanel.setVisible(false);
       }
       
+      updateWayTagging();
       titleBar.invalidate();
+    };
+    
+    prefListener3 = e -> {
+      updateWayTagging();
     };
     
     p = new JPanel(new GridBagLayout());
@@ -460,9 +497,11 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
     
     for(int i = 1; i < nodeLists.size(); i++) {
       JSeparator middle = new JSeparator(JSeparator.VERTICAL);
+      middle.setVisible(false);
       
       JScrollPane east = new JScrollPane(nodeLists.get(i));
       east.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+      east.setVisible(false);
       
       p.add(middle, GBC.std(column++, 1).fill(GBC.VERTICAL));
       p.add(east, GBC.std(column++, 1).fill());
@@ -627,6 +666,66 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
     };
     
     load();
+  }
+  
+  private boolean isNodeTemplateEnabled(NodeTemplate t) {
+    boolean result = false;
+    
+    if(OsmDataManager.getInstance().getActiveDataSet() != null) {
+      Collection<Node> nodes = OsmDataManager.getInstance().getActiveDataSet().getSelectedNodes();
+      Collection<Way> ways = OsmDataManager.getInstance().getActiveDataSet().getSelectedWays();
+      
+      result = (!t.isNotForNodes() || (ways.isEmpty() && t.isForWays()) || (t.isNotForNodes() && ways.size() > 0) || (t.isForWays() && ways.size() > 0)) && t.isEnabled(wayTaggingPossible);
+      
+      if(result && t.isOnlyForUntaggedObjects() && (!ways.isEmpty() || !nodes.isEmpty())) {
+        boolean found = false;
+        
+        if(!t.isNotForNodes()) {
+          for(Node n : nodes) {
+            if(!n.hasKeys()) {
+              found = true;
+              break;
+            }
+          }
+        }
+        
+        if(t.isForWays()) {
+          for(Way w : ways) {
+            if(!w.hasKeys()) {
+              found = true;
+              break;
+            }
+          }
+        }
+        
+        result = found;
+      }
+    }
+    
+    return result;
+  }
+  
+  private void updateAutoTagEnabledState() {
+    if(!isNodeTemplateSelected()) {
+      setAutoTagSelectionSelected(false);
+      autoTagSelection.setEnabled(false);
+    }
+    else {
+      autoTagSelection.setEnabled(true);
+    }
+  }
+  
+  private void repaintLists() {
+    p.repaint();
+  }
+  
+  private void updateWayTagging() {
+    wayTaggingPossible = Config.getPref().getBoolean(PREF_KEY_TAG_SELECTION, true) ||Config.getPref().getBoolean(PREF_KEY_AUTO_TAG_SELECTION, true);
+    
+    repaintLists();
+    
+    updateBtnEnabledState();
+    updateAutoTagEnabledState();
   }
   
   private void setAutoTagSelectionSelected(boolean value) {
@@ -930,18 +1029,18 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
         n.iconName = iconName;
         n.loadIcon();
         
-        for(JList<NodeTemplate> list : nodeLists) {
-          list.repaint();
-        }
+        repaintSelectedRow();
       }
     }
   }
   
   private class PresetAction extends AbstractAction {
     private Action parent;
+    private String name;
     
     private PresetAction(JMenuItem preset) {      
       parent = preset.getAction();
+      name = preset.getText();
       putValue(NAME, preset.getText());
       putValue(SHORT_DESCRIPTION, parent.getValue(SHORT_DESCRIPTION));
       putValue(SMALL_ICON, parent.getValue(SMALL_ICON));
@@ -983,6 +1082,10 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
 
         if(!toUse.getKeys().isEmpty()) {
           NodeTemplate t = new NodeTemplate(((TaggingPreset)parent).iconName, toUse);
+          
+          if(name != null) {
+            t.name = name;
+          }
           
           if(((TaggingPreset) parent).types != null) {
             t.setNotForNodes(!isNode);
@@ -1042,8 +1145,13 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
         final Action a = ((JMenuItem) subMenu).getAction();
         
         if(a instanceof TaggingPreset && ((TaggingPreset) a).types != null && (((TaggingPreset) a).types.contains(TaggingPresetType.NODE) || ((TaggingPreset) a).types.contains(TaggingPresetType.WAY))) {
-          parent.add(new PresetAction((JMenuItem)subMenu));
-          parent2.add(new IconAction((JMenuItem)subMenu));
+          if(wayTaggingPossible || (((TaggingPreset) a).types.contains(TaggingPresetType.NODE))) {
+            parent.add(new PresetAction((JMenuItem)subMenu));
+          }
+          
+          if(subMenu instanceof JMenu || ((JMenuItem)subMenu).getIcon() != null) {
+            parent2.add(new IconAction((JMenuItem)subMenu));
+          }
         }
       }
     }
@@ -1070,6 +1178,7 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
     popupMenu.addSeparator();
     popupMenu.add(forWays);
     popupMenu.add(notForNodes);
+    popupMenu.add(onlyForUntaggedObjects);
     popupMenu.addSeparator();
     popupMenu.add(setIconMenu);
     popupMenu.add(edit);
@@ -1093,19 +1202,18 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
     
     if(((autoTagSelection.isVisible() && autoTagSelection.isSelected()) || selectionTag) && !autoTagDisabled) {
       if(!selection.isEmpty()) {
-        timer = Config.getPref().getInt(PREF_KEY_SELECTION_AUTO_OFF, 10) * 1000 + 500;
-        
         selection.forEach(p -> {
           NodeTemplate t = getSelectedTemplate();
           
-          if(t != null) {
+          if(t != null && isNodeTemplateEnabled(t)) {
             boolean forWays = t.isForWays();
             boolean notForNodes = t.isNotForNodes();
             
             final ArrayList<Command> cmds = new ArrayList<>();
             
             t.map.forEach((key, value) -> {
-              if(((p instanceof Node && !notForNodes) || (forWays && p instanceof Way)) && !p.hasTag(key, value)) {
+              if(((p instanceof Node && !notForNodes) || (forWays && p instanceof Way)) && !p.hasTag(key, value) && (!t.isOnlyForUntaggedObjects() || !p.hasKeys())) {
+                timer = Config.getPref().getInt(PREF_KEY_SELECTION_AUTO_OFF, 10) * 1000 + 500;
                 cmds.add(new ChangePropertyCommand(p, key, value));
               }
             });
@@ -1124,6 +1232,9 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
     add.updateEnabledState();
     
     handleSelection(event.getSelection(), false);
+    
+    repaintLists();
+    updateAutoTagEnabledState();
   }
 
   private void updateBtnEnabledState() {
@@ -1148,6 +1259,7 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
     MainApplication.getLayerManager().addActiveLayerChangeListener(this);
     Config.getPref().addKeyPreferenceChangeListener(PREF_KEY_MAX_NUMBER_OF_LIST_COLUMNS, prefListener);
     Config.getPref().addKeyPreferenceChangeListener(PREF_KEY_AUTO_TAG_SELECTION, prefListener2);
+    Config.getPref().addKeyPreferenceChangeListener(PREF_KEY_TAG_SELECTION, prefListener3);
     updateBtnEnabledState();
   }
 
@@ -1157,6 +1269,7 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
     MainApplication.getLayerManager().removeActiveLayerChangeListener(this);
     Config.getPref().removeKeyPreferenceChangeListener(PREF_KEY_MAX_NUMBER_OF_LIST_COLUMNS, prefListener);
     Config.getPref().removeKeyPreferenceChangeListener(PREF_KEY_AUTO_TAG_SELECTION, prefListener2);
+    Config.getPref().removeKeyPreferenceChangeListener(PREF_KEY_TAG_SELECTION, prefListener3);
   }
 
   @Override
@@ -1177,6 +1290,7 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
         String iconName = null;
         boolean forWays = false;
         boolean notForNodes = false;
+        boolean onlyForUntaggedObjects = false;
 
         if(name.contains(SEPARATOR_ICON)) {
           iconName = name.substring(name.indexOf(SEPARATOR_ICON)+SEPARATOR_ICON.length());
@@ -1184,23 +1298,25 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
         }
         
         if(name.contains(SEPARATOR_WAY)) {
-          String test = name.substring(0, name.lastIndexOf((SEPARATOR_WAY)));
+          String[] values = name.split(SEPARATOR_WAY.replace("*", "\\*"), -1);
+          name = values[values.length-1];
           
-          if(test.contains(SEPARATOR_WAY)) {
-            notForNodes = Boolean.parseBoolean(test.substring(0,test.indexOf(SEPARATOR_WAY)));
-            test = test.substring(test.indexOf(SEPARATOR_WAY)+SEPARATOR_WAY.length());
+          if(values.length >= 2) {
+            notForNodes = Boolean.parseBoolean(values[values.length-2]);
           }
-          
-          forWays = Boolean.parseBoolean(test);
-                  
-          name = name.substring(name.lastIndexOf(SEPARATOR_WAY)+SEPARATOR_WAY.length());
+          if(values.length >= 3) {
+            forWays = Boolean.parseBoolean(values[values.length-3]);
+          }
+          if(values.length >= 4) {
+            onlyForUntaggedObjects = Boolean.parseBoolean(values[values.length-4]);
+          }
         }
         
         if (name.contains(SEPARATOR_NAME)) {
           name = name.substring(0, name.indexOf(SEPARATOR_NAME));
         }
 
-        model.addElement(new NodeTemplate(name, iconName, keys.get(i), forWays, notForNodes));
+        model.addElement(new NodeTemplate(name, iconName, keys.get(i), forWays, notForNodes, onlyForUntaggedObjects));
       }
     }
     else {
@@ -1213,7 +1329,7 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
         LinkedHashMap<String, String> map = new LinkedHashMap<>();
         map.put(tags[i].getKey(), tags[i].getValue());
         
-        model.addElement(new NodeTemplate(nameArr[i], iconArr[i], map, forWays[i], forWays[i]));
+        model.addElement(new NodeTemplate(nameArr[i], iconArr[i], map, forWays[i], forWays[i], false));
       }
       
       sortItem.actionPerformed(null);
@@ -1230,14 +1346,10 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
       while (namesList.contains(name)) {
         name = template.name + SEPARATOR_NAME + count++;
       }
-
-      if(template.isNotForNodes()) {
-        name = "true" + SEPARATOR_WAY + name;
-      }
       
-      if(template.isForWays()) {
-        name = "true" + SEPARATOR_WAY + name;
-      }
+      name = String.valueOf(template.isNotForNodes()) + SEPARATOR_WAY + name;
+      name = String.valueOf(template.isForWays()) + SEPARATOR_WAY + name;
+      name = String.valueOf(template.isOnlyForUntaggedObjects()) + SEPARATOR_WAY + name;
       
       if(template.iconName != null) {
         name += SEPARATOR_ICON + template.iconName;
@@ -1322,7 +1434,7 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
     protected final void updateEnabledState() {
       DataSet ds = OsmDataManager.getInstance().getActiveDataSet();
       setEnabled(ds != null && !ds.isLocked() && !Utils.isEmpty(OsmDataManager.getInstance().getInProgressSelection())
-          && (!ds.getSelectedNodes().isEmpty() || !ds.getSelectedWays().isEmpty()) && nodeList.isEnabled());
+          && (!ds.getSelectedNodes().isEmpty() || (wayTaggingPossible && !ds.getSelectedWays().isEmpty())) && nodeList.isEnabled());
     }
   }
   
@@ -1436,18 +1548,21 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
     
     private String name;
     private String iconName;
-    private Icon icon;
+    private ImageIcon icon;
+    private ImageIcon iconDisabled;
     private boolean forWays;
     private boolean notForNodes;
+    private boolean onlyForUntaggedObjects;
     
     private Map<String, String> map;
     
-    public NodeTemplate(String name, String iconName, Map<String, String> map, boolean forWays, boolean notForNodes) {
+    public NodeTemplate(String name, String iconName, Map<String, String> map, boolean forWays, boolean notForNodes, boolean onlyForUntaggedObjects) {
       this.name = name;
       this.map = map;
       this.iconName = iconName;
       this.forWays = forWays;
       this.notForNodes = notForNodes;
+      this.onlyForUntaggedObjects = onlyForUntaggedObjects;
       loadIcon();
     }
 
@@ -1477,6 +1592,14 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
       notForNodes = true;
     }
     
+    public void setOnlyForUntaggedObjects(boolean onlyForUntaggedObjects) {
+      this.onlyForUntaggedObjects = onlyForUntaggedObjects;
+    }
+    
+    public boolean isOnlyForUntaggedObjects() {
+      return onlyForUntaggedObjects;
+    }
+    
     public void setNotForNodes(boolean notForNodes) {
       this.notForNodes = notForNodes;
     }
@@ -1491,6 +1614,10 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
     
     public boolean isForWays() {
       return forWays;
+    }
+    
+    public boolean isEnabled(boolean tagging) {
+      return tagging || !isNotForNodes();
     }
     
     private void loadIcon() {
@@ -1533,6 +1660,18 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
                     i.paintIcon(c, g, x, y);
                   }
                 };
+                
+
+                BufferedImage iconImage = new BufferedImage(icon.getIconWidth(), icon.getIconHeight(), BufferedImage.TYPE_INT_ARGB);
+                
+                Graphics2D bGr = iconImage.createGraphics();
+                icon.paintIcon(null, bGr, 0, 0);
+                bGr.dispose();
+                
+                ColorConvertOp op = new ColorConvertOp(ColorSpace.getInstance(ColorSpace.CS_GRAY), null);
+                op.filter(iconImage, iconImage);
+                
+                iconDisabled = new ImageIcon(iconImage);
               }
             }
           };
@@ -1569,4 +1708,46 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
       return name;
     }
   }
+  
+  private static final class CheckBoxMenuIcon extends ImageIcon {
+    final ImageIcon icon;
+    final ImageIcon selected;
+    
+    public static final void createIcon(JCheckBoxMenuItem item, ImageIcon ic, ImageIcon selectedOverlay) {
+      new CheckBoxMenuIcon(item, ic, selectedOverlay);
+    }
+    
+    private CheckBoxMenuIcon(JCheckBoxMenuItem item, ImageIcon ic, ImageIcon selectedOverlay) {
+      BufferedImage iconImage = new BufferedImage(ic.getIconWidth(), ic.getIconHeight(), BufferedImage.TYPE_INT_ARGB);
+      
+      Graphics2D bGr = iconImage.createGraphics();
+      ic.paintIcon(null, bGr, 0, 0);
+      selectedOverlay.paintIcon(null, bGr, ic.getIconWidth()/2 - selectedOverlay.getIconWidth()/2, ic.getIconHeight()/2 - selectedOverlay.getIconHeight()/2);
+      bGr.dispose();
+      
+      icon = ic;
+      selected = new ImageIcon(iconImage);
+      item.setIcon(this);
+    }
+    
+    @Override
+    public int getIconHeight() {
+      return icon.getIconHeight();
+    }
+    
+    @Override
+    public int getIconWidth() {
+      return icon.getIconWidth();
+    }
+    
+    @Override
+    public synchronized void paintIcon(Component c, Graphics g, int x, int y) {
+      if(((JCheckBoxMenuItem)c).isSelected()) {
+        selected.paintIcon(c, g, x, y);
+      }
+      else {
+        icon.paintIcon(c, g, x, y);
+      }
+    }
+  };
 }
