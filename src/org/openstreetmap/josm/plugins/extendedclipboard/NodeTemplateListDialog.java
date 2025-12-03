@@ -1341,9 +1341,6 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
               
               UndoRedoHandler.getInstance().add(new SequenceCommand("add template to selection", cmds));
             }
-            else if(clearSelection && !Objects.equals(MainApplication.getMap().mapModeDraw.getValue("active"), Boolean.TRUE)) {
-              SwingUtilities.invokeLater(() -> OsmDataManager.getInstance().getActiveDataSet().clearSelection());
-            }
           }
           
           if(!found.get() && deactivateAutoTaggingIfNotCompatible) {
