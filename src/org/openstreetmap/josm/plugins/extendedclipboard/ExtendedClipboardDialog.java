@@ -115,8 +115,8 @@ public class ExtendedClipboardDialog extends ToggleDialog implements DataSelecti
   
   public ExtendedClipboardDialog() {
     super(tr("Extended Clipboard"), "extendedclipboard", tr("Store selection for later reselection."),
-        Shortcut.registerShortcut("ExtendedClipBoardDialog.extendedclipboard", tr("Windows: {0}", tr("Extended Clipboard")), KeyEvent.VK_B,
-                Shortcut.ALT_SHIFT), 150, true);
+        Shortcut.registerShortcut("ExtendedClipBoardDialog.extendedclipboard", tr("Windows: {0}", tr("Extended Clipboard")), KeyEvent.VK_E,
+                Shortcut.ALT_CTRL_SHIFT), 150, true);
     modelTable = new Hashtable<>();
     clipboard = new JList<>();    
     remember = new AbstractAction(tr("Remember clipboard name"), ImageProvider.get("save")) {

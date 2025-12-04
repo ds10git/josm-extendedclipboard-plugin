@@ -9,6 +9,7 @@ import java.awt.Dimension;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
 import java.awt.GridBagLayout;
+import java.awt.Point;
 import java.awt.Rectangle;
 import java.awt.color.ColorSpace;
 import java.awt.event.ActionEvent;
@@ -45,6 +46,7 @@ import javax.swing.ImageIcon;
 import javax.swing.JButton;
 import javax.swing.JCheckBox;
 import javax.swing.JCheckBoxMenuItem;
+import javax.swing.JDialog;
 import javax.swing.JLabel;
 import javax.swing.JList;
 import javax.swing.JMenu;
@@ -78,11 +80,13 @@ import org.openstreetmap.josm.data.osm.OsmDataManager;
 import org.openstreetmap.josm.data.osm.OsmPrimitive;
 import org.openstreetmap.josm.data.osm.OsmPrimitiveType;
 import org.openstreetmap.josm.data.osm.Tag;
+import org.openstreetmap.josm.data.osm.TagMap;
 import org.openstreetmap.josm.data.osm.Way;
 import org.openstreetmap.josm.data.osm.event.AbstractDatasetChangedEvent;
 import org.openstreetmap.josm.data.osm.event.DataChangedEvent;
 import org.openstreetmap.josm.data.osm.event.DataSetListener;
 import org.openstreetmap.josm.data.osm.event.DatasetEventManager;
+import org.openstreetmap.josm.data.osm.event.DatasetEventManager.FireMode;
 import org.openstreetmap.josm.data.osm.event.NodeMovedEvent;
 import org.openstreetmap.josm.data.osm.event.PrimitivesAddedEvent;
 import org.openstreetmap.josm.data.osm.event.PrimitivesRemovedEvent;
@@ -90,7 +94,6 @@ import org.openstreetmap.josm.data.osm.event.RelationMembersChangedEvent;
 import org.openstreetmap.josm.data.osm.event.SelectionEventManager;
 import org.openstreetmap.josm.data.osm.event.TagsChangedEvent;
 import org.openstreetmap.josm.data.osm.event.WayNodesChangedEvent;
-import org.openstreetmap.josm.data.osm.event.DatasetEventManager.FireMode;
 import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.gui.SideButton;
 import org.openstreetmap.josm.gui.datatransfer.ClipboardUtils;
@@ -130,6 +133,8 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
   private static final String SEPARATOR_NAME = ";;;";
   private static final String SEPARATOR_ICON = "###";
   private static final String SEPARATOR_WAY = "***";
+  
+  private static final NodeTemplate SEPARATOR = createSeparator();
 
   private Rectangle panelBounds;
   private JPanel p;
@@ -160,6 +165,8 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
   private final JPopupMenu popupMenu;
   private final JMenu importMenu;
   private final JMenu setIconMenu;
+  private final JMenuItem addSeparator;
+  private final JMenuItem sortManually;
   
   private PreferenceChangedListener prefListener;
   private PreferenceChangedListener prefListener2;
@@ -185,6 +192,10 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
   private JPopupMenu prefMenu;
   private boolean ctrl;
   private boolean shift;
+  private SortDialog sortDialog;
+  
+  private static int HEIGHT_SEPARATOR;
+  private JMenuItem deleteItem;
   
   private final AbstractAction sortItem = new AbstractAction() {
     @Override
@@ -196,7 +207,9 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
         
         for(DefaultListModel<NodeTemplate> m : models) {
           for(int i = 0; i < m.size(); i++) {
-            nodeTemplateList.add(m.get(i));
+            if(m.get(i) != SEPARATOR) {
+              nodeTemplateList.add(m.get(i));
+            }
           }
           
           m.removeAllElements();
@@ -204,8 +217,8 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
         
         Collections.sort(nodeTemplateList, NodeTemplate.COMPARATOR);
         
-        for(Object el : nodeTemplateList) {
-          model.addElement((NodeTemplate)el);
+        for(NodeTemplate t : nodeTemplateList) {
+          model.addElement(t);
         }
         
         refillLists(true);
@@ -217,6 +230,14 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
     }
   };
   
+  private static NodeTemplate createSeparator() {
+    NodeTemplate separator = new NodeTemplate("S-E-P-A-R-A-T-O-R");
+    separator.forWays = false;
+    separator.notForNodes = true;
+    
+    return separator;
+  }
+  
   private void addColumn(DefaultListCellRenderer renderer) {
     DefaultListModel<NodeTemplate> model2 = new DefaultListModel<>();
     models.add(model2);
@@ -227,6 +248,215 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
     nodeList2.setCellRenderer(renderer);
     
     nodeLists.add(nodeList2);
+  }
+  
+  private void sortManually() {
+    sortDialog = new SortDialog(this);
+    
+    updateBtnEnabledState();
+    updateAutoTagEnabledState();
+    
+    Point p = this.p.getLocationOnScreen();
+    sortDialog.showDialog(new Rectangle(p.x, p.y, getWidth(), getHeight()));
+  }
+  
+  public void stopSortingManually() {
+    sortDialog = null;
+    
+    int toRemove = -2;
+    
+    for(int i = 0; i < model.getSize(); i++) {
+      if((toRemove == -2 || toRemove == -1) && model.get(i) == SEPARATOR) {
+        toRemove = -1;
+      }
+      else if(toRemove == -1) {
+        toRemove = i-1;
+        break;
+      }
+      else {
+        break;
+      }
+    }
+    
+    for(int i = toRemove; i >= 0; i--) {
+      model.remove(i);
+    }
+    
+    for(int i = 1; i < nodeLists.size(); i++) {
+      if(nodeLists.get(i).isVisible() && (i == nodeLists.size()-1 || !nodeLists.get(i+1).isVisible()) &&
+          models.get(i).get(models.get(i).size()-1) == SEPARATOR) {
+        toRemove = -1;
+        break;
+      }
+    }
+
+    updateAutoTagEnabledState();
+    updateBtnEnabledState();
+    
+    if(toRemove != -2) {
+      refillLists(true);
+    }
+  }
+  
+  public void sortToTop() {
+    for(int i = 0; i < nodeLists.size(); i++) {
+      JList<NodeTemplate> list = nodeLists.get(i);
+      
+      int index = list.getSelectedIndex();
+      
+      if(index != -1) {
+        NodeTemplate t = models.get(i).remove(index);
+        
+        for(int k = 0; k < i; k++) {
+          models.get(k).add(0, t);
+          t = models.get(k).remove(models.get(k).getSize()-1);
+        }
+        
+        models.get(i).add(0, t);
+        
+        nodeList.setSelectedIndex(0);
+        nodeList.ensureIndexIsVisible(0);
+        break;
+      }
+    }
+  }
+  
+  public void sortToTopOfList() {
+    for(int i = 0; i < nodeLists.size(); i++) {
+      JList<NodeTemplate> list = nodeLists.get(i);
+      
+      int index = list.getSelectedIndex();
+      
+      if(index != -1) {
+        NodeTemplate t = models.get(i).remove(index);
+        models.get(i).add(0, t);
+        
+        list.setSelectedIndex(0);
+        list.ensureIndexIsVisible(0);
+        break;
+      }
+    }
+  }
+  
+  public void sortUp() {
+    for(int i = 0; i < nodeLists.size(); i++) {
+      JList<NodeTemplate> list = nodeLists.get(i);
+      
+      int index = list.getSelectedIndex();
+      
+      if(index != -1 && (list != nodeList || index > 0)) {
+        if(index > 0) {
+          NodeTemplate t = models.get(i).remove(index);
+          models.get(i).add(index-1, t);
+          
+          list.setSelectedIndex(index-1);
+          list.ensureIndexIsVisible(index-1);
+        }
+        else {
+          NodeTemplate t = models.get(i).remove(index);
+          NodeTemplate other = models.get(i-1).remove(models.get(i-1).size()-1);
+          
+          models.get(i-1).addElement(t);
+          models.get(i).add(index, other);
+          list.clearSelection();
+          nodeLists.get(i-1).setSelectedIndex(models.get(i-1).size()-1);
+          nodeLists.get(i-1).ensureIndexIsVisible(models.get(i-1).size()-1);
+        }
+        
+        break;
+      }
+    }
+  }
+  
+  public void sortDown() {
+    for(int i = 0; i < nodeLists.size(); i++) {
+      JList<NodeTemplate> list = nodeLists.get(i);
+      
+      int index = list.getSelectedIndex();
+      
+      if(index != -1 && (index < list.getModel().getSize()-1 || i < nodeLists.size()-1 && nodeLists.get(i+1).isVisible())) {
+        if(index < list.getModel().getSize()-1) {
+          NodeTemplate t = models.get(i).remove(index);
+          models.get(i).add(index+1, t);
+          
+          list.setSelectedIndex(index+1);
+          list.ensureIndexIsVisible(index+1);
+        }
+        else if(nodeLists.size()-2 > i && nodeLists.get(i+1).isVisible()) {
+          NodeTemplate t = models.get(i).remove(index);
+          NodeTemplate other = models.get(i+1).remove(0);
+          
+          models.get(i+1).add(0, t);
+          models.get(i).addElement(other);
+          list.clearSelection();
+          nodeLists.get(i+1).setSelectedIndex(models.get(i+1).size()-1);
+          nodeLists.get(i+1).ensureIndexIsVisible(models.get(i+1).size()-1);
+        }
+        
+        break;
+      }
+    }
+  }
+  
+  public void sortToBottomOfList() {
+    for(int i = 0; i < nodeLists.size(); i++) {
+      JList<NodeTemplate> list = nodeLists.get(i);
+      
+      int index = list.getSelectedIndex();
+      
+      if(index != -1) {
+        NodeTemplate t = models.get(i).remove(index);
+        models.get(i).addElement(t);
+        
+        list.setSelectedIndex(models.get(i).size()-1);
+        list.ensureIndexIsVisible(models.get(i).size()-1);
+        break;
+      }
+    }
+  }
+  
+  public void sortToBottom() {
+    for(int i = 0; i < nodeLists.size(); i++) {
+      JList<NodeTemplate> list = nodeLists.get(i);
+      
+      int index = list.getSelectedIndex();
+      
+      if(index != -1) {
+        NodeTemplate t = models.get(i).remove(index);
+        
+        int insertIndex = i;
+        
+        for(int k = i+1; k < nodeLists.size(); k++) {
+          if(nodeLists.get(k).isVisible()) {
+            NodeTemplate temp = models.get(k).remove(0);
+            models.get(k-1).addElement(temp);
+            
+            insertIndex = k;
+          }
+          else {
+            break;
+          }
+        }
+        
+        models.get(insertIndex).addElement(t);
+        nodeLists.get(insertIndex).setSelectedIndex(models.get(insertIndex).size()-1);
+        nodeLists.get(insertIndex).ensureIndexIsVisible(models.get(insertIndex).size()-1);
+        
+        break;
+      }
+    }
+  }
+  
+  private void addSeparator() {
+    for(JList<NodeTemplate> list : nodeLists) {
+      int index = list.getSelectedIndex();
+      
+      if(index != -1 && (list != nodeList || index > 0)) {
+        ((DefaultListModel<NodeTemplate>)list.getModel()).add(index, SEPARATOR);
+        refillLists(true);
+        break;
+      }
+    }
   }
   
   private JList<NodeTemplate> createJListWithoutMouseListeners(DefaultListModel<NodeTemplate> model) {
@@ -243,15 +473,37 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
   public NodeTemplateListDialog() {
     super(tr("Node Template List"), "nodes", tr("Store node tags for recration of nodes with the same tags"),
         Shortcut.registerShortcut("NodeTemplateList.nodetemplatelist", tr("Windows: {0}", tr("Node Template List")),
-            KeyEvent.VK_B, Shortcut.ALT_CTRL_SHIFT), 150, true);
+            KeyEvent.VK_N, Shortcut.ALT_CTRL_SHIFT), 150, true);
+    
+    SEPARATOR.forWays = false;
+    SEPARATOR.notForNodes = true;
     
     final DefaultListCellRenderer renderer = new DefaultListCellRenderer() {
+      private JPanel createSeparator() {
+        JSeparator sep = new JSeparator(JSeparator.HORIZONTAL);
+        
+        JPanel p = new JPanel();
+        p.setOpaque(false);
+        p.setLayout(new BoxLayout(p, BoxLayout.Y_AXIS));
+        p.add(Box.createRigidArea(new Dimension(0, 2)));
+        p.add(sep);
+        p.add(Box.createRigidArea(new Dimension(0, 2)));
+        
+        HEIGHT_SEPARATOR = p.getPreferredSize().height;
+        
+        return p;
+      }
+      
+      private final JPanel SEPARATOR = createSeparator();
       @SuppressWarnings("rawtypes")
       @Override
       public Component getListCellRendererComponent(JList list, Object value, int index, boolean isSelected, boolean cellHasFocus) {
           JLabel label = (JLabel) super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
           
-          if(value instanceof NodeTemplate) {
+          if(value == NodeTemplateListDialog.SEPARATOR) {
+            return SEPARATOR;
+          }
+          else if(value instanceof NodeTemplate) {
             NodeTemplate t = (NodeTemplate)value;
             
             if(t.icon != null) {
@@ -279,6 +531,16 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
     importMenu.setIcon(ImageProvider.get("download", ImageSizes.MENU));
     setIconMenu = new JMenu(tr("Set icon for selected node template from preset"));
     setIconMenu.setIcon(ImageProvider.get("imagery_menu", ImageProvider.ImageSizes.MENU));
+    addSeparator = new JMenuItem(tr("Insert separator"));
+    addSeparator.setIcon(ImageProvider.get("hseparator", ImageProvider.ImageSizes.MENU));
+    addSeparator.addActionListener(e -> {
+      addSeparator();
+    });
+    
+    sortManually = new JMenuItem(tr("Sort manually"), ImageProvider.get("dialogs/reverse", ImageSizes.MENU));
+    sortManually.addActionListener(e -> {
+      sortManually();
+    });
     
     model = new DefaultListModel<>();
     models.add(model);
@@ -385,7 +647,7 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
         
         updateBtnEnabledState();
         
-        if(clickThread == null || !clickThread.isAlive()) {
+        if(sortDialog == null && (clickThread == null || !clickThread.isAlive())) {
           clickThread = new Thread() {
             public void run() {
               final AtomicInteger knownClickCount = new AtomicInteger(-1);
@@ -446,7 +708,7 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
       }
       
       private void handlePopupMenu(MouseEvent e) {
-        if(e.getSource() instanceof JList) {
+        if(sortDialog == null && e.getSource() instanceof JList) {
           int index = ((JList<?>)e.getSource()).locationToIndex(e.getPoint());
           
           if(e.isPopupTrigger()) {
@@ -471,11 +733,26 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
             setIconMenu.setEnabled(forWays.isEnabled());
             
             NodeTemplate selected = getSelectedTemplate();
+            deleteItem.setText(tr("Delete selected node template"));
+            delete.setTooltip(deleteItem.getText());
             
-            if(selected != null) {
+            if(selected == SEPARATOR) {
+              addSeparator.setEnabled(false);
+              forWays.setEnabled(false);
+              notForNodes.setEnabled(false);
+              onlyForUntaggedObjects.setEnabled(false);
+              setIconMenu.setEnabled(false);
+              deleteItem.setText(tr("Delete separator"));
+              delete.setTooltip(deleteItem.getText());
+            }
+            else if(selected != null) {
+              addSeparator.setEnabled(nodeList.getSelectedIndex() != 0);
               forWays.setSelected(selected.isForWays());
               notForNodes.setSelected(selected.isNotForNodes());
               onlyForUntaggedObjects.setSelected(selected.isOnlyForUntaggedObjects());
+            }
+            else {
+              addSeparator.setEnabled(false);
             }
             
             popupMenu.show(e.getComponent(), e.getPoint().x, e.getPoint().y);
@@ -815,7 +1092,7 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
   private boolean updateAutoTagEnabledState() {
     NodeTemplate t = getSelectedTemplate();
     
-    if(t != null && t.isEnabled(true)) {
+    if(t != null && t.isEnabled(true) && sortDialog == null) {
       autoTagSelection.setEnabled(true);
       
       return true;
@@ -1047,20 +1324,18 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
   private synchronized void refillLists(boolean force) {
     if(force || panelBounds == null || !panelBounds.equals(p.getBounds())) {
       int numberOfLists = Config.getPref().getInt(PREF_KEY_MAX_NUMBER_OF_LIST_COLUMNS, MAX_LIST_COLUMNS_NUMBER_DEFAULT);
+      NodeTemplate selected = getSelectedTemplate();
       
       if(numberOfLists > 1) {
-        int entryCount = 0;
-        
-        for(DefaultListModel<NodeTemplate> m : models) {
-          entryCount += m.size();
-        }
-        
         int split = nodeList.getVisibleRowCount();
         
         Rectangle a = nodeList.getVisibleRect();
         
-        if(model.size() > 0) {      
-          split = a.height/nodeList.getCellBounds(0, 0).height;
+        int rowHeight = 0;
+        
+        if(model.size() > 0) {
+          rowHeight = nodeList.getCellBounds(0, 0).height;
+          split = a.height/rowHeight;
         }
         
         if(split != 0) {
@@ -1068,19 +1343,29 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
           
           for(int k = 0; k < models.size(); k++) {
             for(int i = 0; i < models.get(k).size(); i++) {
-              entries.add(models.get(k).get(i));
+              if(!entries.isEmpty() || models.get(k).get(i) != SEPARATOR) {
+                entries.add(models.get(k).get(i));
+              }
             }
             
             models.get(k).clear();
           }
           
-          int neededLists = (int)Math.ceil(entryCount / (float)split);
+          for(int k = entries.size()-1; k >= 0; k--) {
+            if(entries.get(k) == SEPARATOR) {
+              entries.remove(k);
+            }
+            else {
+              break;
+            }
+          }
+          
           int n = split;
           
-          if(entryCount >= split*numberOfLists) {
-            n = entryCount / numberOfLists;
+          if(entries.size() >= split*numberOfLists) {
+            n = entries.size() / numberOfLists;
             
-            if(entryCount % numberOfLists != 0) {
+            if(entries.size() % numberOfLists != 0) {
               n++;
             }
           }
@@ -1089,11 +1374,29 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
           int index = 0;
           
           DefaultListModel<NodeTemplate> m = models.get(index);
+          int heightUsed = 0;
           
           for(NodeTemplate t : entries) {
-            if(++count > n) {
+           
+            if(rowHeight > 0) {
+              if(t == SEPARATOR) {
+                heightUsed += HEIGHT_SEPARATOR;
+              }
+              else {
+                heightUsed += rowHeight;
+              }
+            } 
+            
+            if(++count > n && heightUsed > a.height) {
               m = models.get(++index);
               count = 1;
+              
+              if(t == SEPARATOR) {
+                heightUsed = HEIGHT_SEPARATOR;
+              }
+              else {
+                heightUsed = rowHeight;
+              }
             }
             
             m.addElement(t);
@@ -1102,7 +1405,7 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
           count = 0;
           
           for(int i = 0; i < p.getComponentCount(); i++) {
-            if(count >= Math.min(neededLists, numberOfLists)) {
+            if(count >= Math.min(index+1, numberOfLists)) {
               p.getComponent(i).setVisible(false);
             }
             else {
@@ -1110,6 +1413,7 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
             }
               
             if(p.getComponent(i) instanceof JScrollPane) {
+              nodeLists.get(count).setVisible(p.getComponent(i).isVisible());
               count++;
             }
           }
@@ -1128,6 +1432,14 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
       resizeNodeLists(false);
       panelBounds = p.getBounds();
       setAutoTagSelectionSelected(false);
+      
+      if(selected != null && selected != SEPARATOR) {
+        setSelectedNodeTemplate(selected);
+      }
+      
+      if(sortDialog != null) {
+        sortDialog.updateBtnEnabledState(this);
+      }
     }
   }
   
@@ -1293,6 +1605,8 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
     
     popupMenu.add(importMenu);
     popupMenu.add(sortItem);
+    popupMenu.add(sortManually);
+    popupMenu.add(addSeparator);
     popupMenu.addSeparator();
     popupMenu.add(copy);
     popupMenu.add(paste);
@@ -1303,7 +1617,7 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
     popupMenu.addSeparator();
     popupMenu.add(setIconMenu);
     popupMenu.add(edit);
-    popupMenu.add(delete);
+    deleteItem = popupMenu.add(delete);
   }
   
   @Override
@@ -1355,6 +1669,7 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
   @Override
   public synchronized void selectionChanged(SelectionChangeEvent event) {
     add.updateEnabledState();
+    add.setEnabled(sortDialog == null && getSelectedTemplate() != SEPARATOR);
     
     handleSelection(event.getSelection(), false, ctrl, shift, clearSelectionAfterApplyingTag);
     
@@ -1363,12 +1678,32 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
   }
 
   private void updateBtnEnabledState() {
-    sortItem.setEnabled(model.size() > 1 && nodeList.isEnabled());
+    sortItem.setEnabled(sortDialog == null && model.size() > 1 && nodeList.isEnabled());
     add.updateEnabledState();
     edit.updateEnabledState();
     copy.updateEnabledState();
     paste.updateEnabledState();
     delete.updateEnabledState();
+    
+    boolean separator = getSelectedTemplate() == SEPARATOR;
+    
+    add.setEnabled(add.isEnabled() && !separator);
+    edit.setEnabled(edit.isEnabled() && !separator);
+    copy.setEnabled(copy.isEnabled() && !separator);
+    paste.setEnabled(paste.isEnabled() && !separator);
+    
+    if(separator) {
+      deleteItem.setText(tr("Delete separator"));
+    }
+    else {
+      deleteItem.setText(tr("Delete selected node template"));
+    }
+    
+    delete.setTooltip(deleteItem.getText());
+    
+    if(sortDialog != null) {
+      sortDialog.updateBtnEnabledState(this);
+    }
   }
 
   private void repaintSelectedRow(JList<NodeTemplate> nodeList) {
@@ -1402,6 +1737,7 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
     }
     
     JTextField name = new JTextField(t.toString());
+    name.setPreferredSize(new Dimension(350, name.getPreferredSize().height));
     name.addComponentListener(new ComponentAdapter() {
       @Override
       public void componentResized(ComponentEvent e) {
@@ -1572,15 +1908,20 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
         if (name.contains(SEPARATOR_NAME)) {
           name = name.substring(0, name.indexOf(SEPARATOR_NAME));
         }
-
-        NodeTemplate t = new NodeTemplate(name, iconName, keys.get(i), forWays, notForNodes, onlyForUntaggedObjects);
         
-        if(ctrl != null) {
-          t.ctrl = ctrl.get(i);
-          t.shift = shift.get(i);
+        if(Objects.equals(SEPARATOR.name, name)) {
+          model.addElement(SEPARATOR);
         }
-        
-        model.addElement(t);
+        else {
+          NodeTemplate t = new NodeTemplate(name, iconName, keys.get(i), forWays, notForNodes, onlyForUntaggedObjects);
+          
+          if(ctrl != null) {
+            t.ctrl = ctrl.get(i);
+            t.shift = shift.get(i);
+          }
+          
+          model.addElement(t);
+        }
       }
     }
     else {
@@ -1674,10 +2015,12 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
       }
       try {
         final Collection<Node> nodeList = OsmDataManager.getInstance().getActiveDataSet().getSelectedNodes();
-
+        boolean added = false;
+        
         for (Node node : nodeList) {
           if(!node.getKeys().isEmpty()) {
             addNodeTemplate(new NodeTemplate(node));
+            added = true;
           }
         }
         
@@ -1686,10 +2029,11 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
         for(Way w : wayList) {
           if(!w.getKeys().isEmpty()) {
             addNodeTemplate(new NodeTemplate(w));
+            added = true;
           }
         }
         
-        if(nodeList.isEmpty() && wayList.isEmpty()) {
+        if(!added) {
           NodeTemplate t = editNodeTemplate(null);
           
           if(t != null) {
@@ -1706,7 +2050,7 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
     @Override
     protected final void updateEnabledState() {
       DataSet ds = OsmDataManager.getInstance().getActiveDataSet();
-      setEnabled(ds != null && !ds.isLocked() && (ds.getSelectedNodesAndWays().isEmpty() || !ds.getSelectedNodes().isEmpty() || (wayTaggingPossible && !ds.getSelectedWays().isEmpty())) && nodeList.isEnabled());
+      setEnabled(sortDialog == null && ds != null && !ds.isLocked() && (ds.getSelectedNodesAndWays().isEmpty() || !ds.getSelectedNodes().isEmpty() || (wayTaggingPossible && !ds.getSelectedWays().isEmpty())) && nodeList.isEnabled());
     }
   }
   
@@ -1724,7 +2068,7 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
 
     @Override
     protected final void updateEnabledState() {
-      setEnabled(isNodeTemplateUsable());
+      setEnabled(sortDialog == null && isNodeTemplateUsable());
     }
   }
 
@@ -1747,7 +2091,7 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
 
     @Override
     protected final void updateEnabledState() {
-      setEnabled(isNodeTemplateUsable() && !isSelectedTemplateNotForNodes());
+      setEnabled(sortDialog == null && isNodeTemplateUsable() && !isSelectedTemplateNotForNodes());
     }
   }
 
@@ -1772,7 +2116,7 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
 
     @Override
     protected final void updateEnabledState() {
-      setEnabled(isNodeTemplateUsable() && !isSelectedTemplateNotForNodes());
+      setEnabled(sortDialog == null && isNodeTemplateUsable() && !isSelectedTemplateNotForNodes());
     }
   }
   
@@ -1803,7 +2147,7 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
 
     @Override
     protected final void updateEnabledState() {
-      setEnabled(isNodeTemplateUsable());
+      setEnabled(sortDialog == null && isNodeTemplateUsable());
     }
   }
 
@@ -1829,7 +2173,7 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
     
     public NodeTemplate(String name, String iconName, Map<String, String> map, boolean forWays, boolean notForNodes, boolean onlyForUntaggedObjects) {
       this.name = name;
-      this.map = map;
+      this.map = getMapFromMap(map);
       this.iconName = iconName;
       this.forWays = forWays;
       this.notForNodes = notForNodes;
@@ -1837,6 +2181,16 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
       ctrl = new LinkedHashMap<>();
       shift = new LinkedHashMap<>();
       loadIcon();
+    }
+    
+    public Map<String,String> getMapFromMap(Map<String,String> map) {
+      if(map instanceof TagMap) {
+        Map<String,String> newMap = new LinkedHashMap<String, String>();
+        map.forEach((key,value) -> newMap.put(key, value));
+        map = newMap;
+      }
+      
+      return map;
     }
 
     public NodeTemplate(String iconName, OsmPrimitive p) {
@@ -1863,7 +2217,7 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
     }
     
     public NodeTemplate(Node node) {
-      map = node.getKeys();
+      map = getMapFromMap(node.getKeys());
       ctrl = new LinkedHashMap<>();
       shift = new LinkedHashMap<>();
       
@@ -2201,6 +2555,125 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
     
     public boolean isSelected() {
       return check.isSelected();
+    }
+  }
+  
+  private static final class SortDialog extends JDialog {
+    private final JButton up;
+    private final JButton down;
+    private final JButton toTopOfList;
+    private final JButton toBottomOfList;
+    private final JButton toTop;
+    private final JButton toBottom;
+    
+    public SortDialog(NodeTemplateListDialog d) {
+      up = new JButton(ImageProvider.get("up", ImageSizes.LARGEICON));
+      up.setToolTipText(tr("Move list entry up by one"));
+      up.addActionListener(e -> {
+        d.sortUp();
+        updateBtnEnabledState(d);
+      });
+      
+      down = new JButton(ImageProvider.get("down", ImageSizes.LARGEICON));
+      down.setToolTipText(tr("Move list entry down by one"));
+      down.addActionListener(e -> {
+        d.sortDown();
+        updateBtnEnabledState(d);
+      });
+      
+      toTopOfList = new JButton(ImageProvider.get("to-top-of-list", ImageSizes.LARGEICON));
+      toTopOfList.setToolTipText(tr("Move to top of the current list"));
+      toTopOfList.addActionListener(e -> {
+        d.sortToTopOfList();
+        updateBtnEnabledState(d);
+      });
+      
+      toBottomOfList = new JButton(ImageProvider.get("to-bottom-of-list", ImageSizes.LARGEICON));
+      toBottomOfList.setToolTipText(tr("Move to end the current list"));
+      toBottomOfList.addActionListener(e -> {
+        d.sortToBottomOfList();
+        updateBtnEnabledState(d);
+      });
+      
+      toTop = new JButton(ImageProvider.get("to-top", ImageSizes.LARGEICON));
+      toTop.setToolTipText(tr("Move to begin of first list"));
+      toTop.addActionListener(e -> {
+        d.sortToTop();
+        updateBtnEnabledState(d);
+      });
+      
+      toBottom = new JButton(ImageProvider.get("to-bottom", ImageSizes.LARGEICON));
+      toBottom.setToolTipText(tr("Move to end of last list"));
+      toBottom.addActionListener(e -> {
+        d.sortToBottom();
+        updateBtnEnabledState(d);
+      });
+      
+      JButton exit = new JButton(ImageProvider.get("exit", ImageSizes.LARGEICON));
+      exit.setToolTipText(tr("Exit sorting"));
+      exit.addActionListener(e -> {
+        d.stopSortingManually();
+        dispose();
+      });
+      
+      JPanel content = new JPanel();
+      content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));
+      
+      content.add(toTop);
+      content.add(toTopOfList);
+      content.add(up);
+      content.add(down);
+      content.add(toBottomOfList);
+      content.add(toBottom);
+      content.add(exit);
+      
+      updateBtnEnabledState(d);
+      
+      setContentPane(content);
+      setUndecorated(true);
+      setAlwaysOnTop(true);
+      setResizable(false);
+      pack();
+    }
+    
+    private void updateBtnEnabledState(NodeTemplateListDialog d) {
+      NodeTemplate selected = d.getSelectedTemplate();
+      
+      up.setEnabled(selected != null && d.nodeList.getSelectedIndex() != 0);
+      down.setEnabled(selected != null);
+      toTop.setEnabled(up.isEnabled());
+      toBottom.setEnabled(selected != null);
+      toTopOfList.setEnabled(selected != null);
+      toBottomOfList.setEnabled(selected != null);
+      
+      if(selected != null) {
+        for(int i = 0; i < d.nodeLists.size(); i++) {
+          JList<NodeTemplate> list = d.nodeLists.get(i);
+          
+          if(list.getSelectedIndex() != -1) {
+            toBottom.setEnabled(i < d.nodeLists.size()-1 && d.nodeLists.get(i+1).isVisible());
+            down.setEnabled(list.getSelectedIndex() < list.getModel().getSize()-1 || toBottom.isEnabled());
+            toBottomOfList.setEnabled(list.getSelectedIndex() < list.getModel().getSize()-1);
+            toTopOfList.setEnabled(list.getSelectedIndex() > 0);
+            break;
+          }
+        }
+      }
+    }
+        
+    public void showDialog(Rectangle bounds) {
+      Point p = new Point(bounds.x-getWidth(), bounds.y);
+      
+      if(bounds.x-getWidth() < 0) {
+        p.x = bounds.x+bounds.width;
+      }
+      
+      if(bounds.y+getHeight() > getGraphicsConfiguration().getDevice().getDefaultConfiguration().getBounds().height) {
+        p.y = getGraphicsConfiguration().getDevice().getDefaultConfiguration().getBounds().height-+getHeight();
+      }
+      
+      setLocation(p);
+      setVisible(true);
     }
   }
 }
