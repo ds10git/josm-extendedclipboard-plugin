@@ -2127,22 +2127,24 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
 
     @Override
     public void actionPerformed(ActionEvent e) {
-      for(int i = 0; i < models.size(); i++) {
-        int index = nodeLists.get(i).getSelectedIndex();
-        
-        if(index != -1) {
-          models.get(i).remove(index);
+      if(JOptionPane.YES_OPTION == JOptionPane.showConfirmDialog(MainApplication.getMainFrame(), tr("Do you really want to delete selected template?"), tr("Delete selected template?"), JOptionPane.YES_NO_OPTION)) {        
+        for(int i = 0; i < models.size(); i++) {
+          int index = nodeLists.get(i).getSelectedIndex();
           
-          if(models.get(i).size() >= index) {
-            nodeLists.get(i).setSelectedIndex(index-1);
+          if(index != -1) {
+            models.get(i).remove(index);
+            
+            if(models.get(i).size() >= index) {
+              nodeLists.get(i).setSelectedIndex(index-1);
+            }
+            
+            break;
           }
-          
-          break;
         }
+        
+        refillLists(true);
+        updateBtnEnabledState();
       }
-      
-      refillLists(true);
-      updateBtnEnabledState();
     }
 
     @Override
