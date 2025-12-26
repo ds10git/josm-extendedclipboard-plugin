@@ -153,6 +153,7 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
   private final PasteAction paste;
   private final DeleteAction delete;
   private final JCheckBoxMenuItem forWays;
+  private final JCheckBoxMenuItem forClosedWays;
   private final JCheckBoxMenuItem notForNodes;
   private final JCheckBoxMenuItem onlyForUntaggedObjects;
 
@@ -389,8 +390,8 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
           models.get(i+1).add(0, t);
           models.get(i).addElement(other);
           list.clearSelection();
-          nodeLists.get(i+1).setSelectedIndex(models.get(i+1).size()-1);
-          nodeLists.get(i+1).ensureIndexIsVisible(models.get(i+1).size()-1);
+          nodeLists.get(i+1).setSelectedIndex(0);
+          nodeLists.get(i+1).ensureIndexIsVisible(0);
         }
         
         break;
@@ -476,6 +477,7 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
             KeyEvent.VK_N, Shortcut.ALT_CTRL_SHIFT), 150, true);
     
     SEPARATOR.forWays = false;
+    SEPARATOR.forClosedWays = false;
     SEPARATOR.notForNodes = true;
     
     final DefaultListCellRenderer renderer = new DefaultListCellRenderer() {
@@ -570,7 +572,7 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
     
     final ImageIcon checked = ImageProvider.get("check_selected", ImageProvider.ImageSizes.SMALLICON);
     
-    forWays = new JCheckBoxMenuItem(tr("Allow usage for ways on selection"));
+    forWays = new JCheckBoxMenuItem(tr("Allow usage for unclosed ways on selection"));
     CheckBoxMenuIcon.createIcon(forWays, ImageProvider.get(OsmPrimitiveType.WAY), checked, false);
     CheckBoxMenuIcon.createIcon(forWays, ImageProvider.get(OsmPrimitiveType.WAY), checked, true);
     forWays.addActionListener(new ActionListener() {
@@ -579,6 +581,20 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
         NodeTemplate t = getSelectedTemplate();
         
         t.setForWays(!t.isForWays());
+        
+        repaintSelectedRow();
+      }
+    });
+    
+    forClosedWays = new JCheckBoxMenuItem(tr("Allow usage for closed ways on selection"));
+    CheckBoxMenuIcon.createIcon(forClosedWays, ImageProvider.get(OsmPrimitiveType.CLOSEDWAY), checked, false);
+    CheckBoxMenuIcon.createIcon(forClosedWays, ImageProvider.get(OsmPrimitiveType.CLOSEDWAY), checked, true);
+    forClosedWays.addActionListener(new ActionListener() {
+      @Override
+      public void actionPerformed(ActionEvent e) {
+        NodeTemplate t = getSelectedTemplate();
+        
+        t.setForClosedWays(!t.isForClosedWays());
         
         repaintSelectedRow();
       }
@@ -728,6 +744,7 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
             
             sortItem.setEnabled(((JList<?>)e.getSource()).getModel().getSize() > 0);
             forWays.setEnabled(((JList<?>)e.getSource()).getSelectedIndex() != -1);
+            forClosedWays.setEnabled(forWays.isEnabled());
             notForNodes.setEnabled(forWays.isEnabled());
             onlyForUntaggedObjects.setEnabled(forWays.isEnabled());
             setIconMenu.setEnabled(forWays.isEnabled());
@@ -739,6 +756,7 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
             if(selected == SEPARATOR) {
               addSeparator.setEnabled(false);
               forWays.setEnabled(false);
+              forClosedWays.setEnabled(false);
               notForNodes.setEnabled(false);
               onlyForUntaggedObjects.setEnabled(false);
               setIconMenu.setEnabled(false);
@@ -748,6 +766,7 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
             else if(selected != null) {
               addSeparator.setEnabled(nodeList.getSelectedIndex() != 0);
               forWays.setSelected(selected.isForWays());
+              forClosedWays.setSelected(selected.isForClosedWays());
               notForNodes.setSelected(selected.isNotForNodes());
               onlyForUntaggedObjects.setSelected(selected.isOnlyForUntaggedObjects());
             }
@@ -1340,7 +1359,7 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
         
         if(split != 0) {
           LinkedList<NodeTemplate> entries = new LinkedList<>();
-          
+              
           for(int k = 0; k < models.size(); k++) {
             for(int i = 0; i < models.get(k).size(); i++) {
               if(!entries.isEmpty() || models.get(k).get(i) != SEPARATOR) {
@@ -1350,7 +1369,7 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
             
             models.get(k).clear();
           }
-          
+                    
           for(int k = entries.size()-1; k >= 0; k--) {
             if(entries.get(k) == SEPARATOR) {
               entries.remove(k);
@@ -1375,9 +1394,9 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
           
           DefaultListModel<NodeTemplate> m = models.get(index);
           int heightUsed = 0;
+          int listsEntryCount = 0;
           
           for(NodeTemplate t : entries) {
-           
             if(rowHeight > 0) {
               if(t == SEPARATOR) {
                 heightUsed += HEIGHT_SEPARATOR;
@@ -1388,6 +1407,14 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
             } 
             
             if(++count > n && heightUsed > a.height) {
+              int rest = entries.size() - listsEntryCount;
+              
+              n = rest / (numberOfLists-index-1);
+              
+              if(rest % (numberOfLists-index-1) != 0) {
+                n++;
+              }
+
               m = models.get(++index);
               count = 1;
               
@@ -1398,7 +1425,8 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
                 heightUsed = rowHeight;
               }
             }
-            
+
+            listsEntryCount++;
             m.addElement(t);
           }
           
@@ -1612,6 +1640,7 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
     popupMenu.add(paste);
     popupMenu.addSeparator();
     popupMenu.add(forWays);
+    popupMenu.add(forClosedWays);
     popupMenu.add(notForNodes);
     popupMenu.add(onlyForUntaggedObjects);
     popupMenu.addSeparator();
@@ -1759,7 +1788,8 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
       panel.add(icon, BorderLayout.WEST);
     }
     
-    IconCheckBox forWays = new IconCheckBox(tr("Allow usage for ways on selection"), ImageProvider.get(OsmPrimitiveType.WAY), t.isForWays());
+    IconCheckBox forWays = new IconCheckBox(tr("Allow usage for unclosed ways on selection"), ImageProvider.get(OsmPrimitiveType.WAY), t.isForWays());
+    IconCheckBox forClosedWays = new IconCheckBox(tr("Allow usage for closed ways on selection"), ImageProvider.get(OsmPrimitiveType.CLOSEDWAY), t.isForWays());
     IconCheckBox notForNodes = new IconCheckBox(tr("Not for nodes"), ImageProvider.get("not_for_nodes", ImageProvider.ImageSizes.MENU), t.isNotForNodes());
     IconCheckBox onlyForUntagged = new IconCheckBox(tr("Only for untagged objects"), ImageProvider.get("presets/misc/no_icon", ImageProvider.ImageSizes.MENU), t.isOnlyForUntaggedObjects());
     
@@ -1787,7 +1817,8 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
     content.add(new JLabel(tr("Optional tags with Shift pressed:")), gbc.grid(0, gbc.gridy+1).insets(0, 10, 0, 0).fill(GBC.NONE));
     content.add(shiftScroll, gbc.grid(0, gbc.gridy+1).insets(0).fill(GBC.HORIZONTAL));
     content.add(forWays, gbc.grid(0, gbc.gridy+1).insets(0, 10, 0, 0).fill(GBC.HORIZONTAL));
-    content.add(notForNodes, gbc.grid(0, gbc.gridy+1).insets(0, 2, 0, 0).fill(GBC.HORIZONTAL));
+    content.add(forClosedWays, gbc.grid(0, gbc.gridy+1).insets(0, 2, 0, 0).fill(GBC.HORIZONTAL));
+    content.add(notForNodes, gbc.grid(0, gbc.gridy+1).fill(GBC.HORIZONTAL));
     content.add(onlyForUntagged, gbc.grid(0, gbc.gridy+1).fill(GBC.HORIZONTAL));
     
     StringBuilder b = new StringBuilder();
@@ -1821,6 +1852,7 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
       t.shift = createMapFromText(shift.getText());
       
       t.setForWays(forWays.isSelected());
+      t.setForClosedWays(forClosedWays.isSelected());
       t.setNotForNodes(notForNodes.isSelected());
       t.setOnlyForUntaggedObjects(onlyForUntagged.isSelected());
       
@@ -1882,6 +1914,7 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
         String name = names.get(i);
         String iconName = null;
         boolean forWays = false;
+        boolean forClosedWays = false;
         boolean notForNodes = false;
         boolean onlyForUntaggedObjects = false;
 
@@ -1903,6 +1936,9 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
           if(values.length >= 4) {
             onlyForUntaggedObjects = Boolean.parseBoolean(values[values.length-4]);
           }
+          if(values.length >= 5) {
+            forClosedWays = Boolean.parseBoolean(values[values.length-5]);
+          }
         }
         
         if (name.contains(SEPARATOR_NAME)) {
@@ -1913,7 +1949,7 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
           model.addElement(SEPARATOR);
         }
         else {
-          NodeTemplate t = new NodeTemplate(name, iconName, keys.get(i), forWays, notForNodes, onlyForUntaggedObjects);
+          NodeTemplate t = new NodeTemplate(name, iconName, keys.get(i), forWays, forClosedWays, notForNodes, onlyForUntaggedObjects);
           
           if(ctrl != null) {
             t.ctrl = ctrl.get(i);
@@ -1929,12 +1965,13 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
       final String[] iconArr = {"presets/landmark/trees_broad_leaved.svg", "presets/landmark/tree_row.svg", "presets/service/recycling/waste_basket.svg", "presets/leisure/bench.svg", "presets/barrier/hedge.svg"};
       final Tag[] tags = {new Tag("natural", "tree"), new Tag("natural", "tree_row"), new Tag("amenity", "waste_basket"), new Tag("amenity", "bench"), new Tag("barrier", "hedge")};
       final boolean[] forWays = {false, true, false, false, true};
+      final boolean[] forClosedWays = {false, false, false, false, true};
       
       for(int i = 0; i < tags.length; i++) {
         LinkedHashMap<String, String> map = new LinkedHashMap<>();
         map.put(tags[i].getKey(), tags[i].getValue());
         
-        model.addElement(new NodeTemplate(nameArr[i], iconArr[i], map, forWays[i], forWays[i], false));
+        model.addElement(new NodeTemplate(nameArr[i], iconArr[i], map, forWays[i], forClosedWays[i], forWays[i], false));
       }
       
       sortItem.actionPerformed(null);
@@ -1955,6 +1992,7 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
       name = String.valueOf(template.isNotForNodes()) + SEPARATOR_WAY + name;
       name = String.valueOf(template.isForWays()) + SEPARATOR_WAY + name;
       name = String.valueOf(template.isOnlyForUntaggedObjects()) + SEPARATOR_WAY + name;
+      name = String.valueOf(template.isForClosedWays()) + SEPARATOR_WAY + name;
       
       if(template.iconName != null) {
         name += SEPARATOR_ICON + template.iconName;
@@ -2166,6 +2204,7 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
     private ImageIcon icon;
     private ImageIcon iconDisabled;
     private boolean forWays;
+    private boolean forClosedWays;
     private boolean notForNodes;
     private boolean onlyForUntaggedObjects;
     
@@ -2173,11 +2212,12 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
     private Map<String, String> ctrl;
     private Map<String, String> shift;
     
-    public NodeTemplate(String name, String iconName, Map<String, String> map, boolean forWays, boolean notForNodes, boolean onlyForUntaggedObjects) {
+    public NodeTemplate(String name, String iconName, Map<String, String> map, boolean forWays, boolean forClosedWays, boolean notForNodes, boolean onlyForUntaggedObjects) {
       this.name = name;
       this.map = getMapFromMap(map);
       this.iconName = iconName;
       this.forWays = forWays;
+      this.forClosedWays = forClosedWays;
       this.notForNodes = notForNodes;
       this.onlyForUntaggedObjects = onlyForUntaggedObjects;
       ctrl = new LinkedHashMap<>();
@@ -2229,8 +2269,11 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
     public NodeTemplate(Way way) {
       map = way.getKeys();
       loadName(way);
-      forWays = true;
+      forWays = !way.isClosed();
+      forClosedWays = way.isClosed();
       notForNodes = true;
+      ctrl = new LinkedHashMap<>();
+      shift = new LinkedHashMap<>();
     }
     
     public void setOnlyForUntaggedObjects(boolean onlyForUntaggedObjects) {
@@ -2257,12 +2300,22 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
       return forWays;
     }
     
+    public void setForClosedWays(boolean value) {
+      forClosedWays = value;
+    }
+    
+    public boolean isForClosedWays() {
+      return forClosedWays;
+    }
+    
     public boolean isEnabled(boolean tagging) {
       return (!map.isEmpty() || !ctrl.isEmpty() || !shift.isEmpty()) && (tagging || !isNotForNodes());
     }
     
     public boolean isCompatible(OsmPrimitive p) {
-      return ((p instanceof Way && forWays) || (p instanceof Node && !notForNodes)) && (!onlyForUntaggedObjects || onlyMatchingTags(p));
+      boolean result = ((p instanceof Way && ((!((Way)p).isClosed() && forWays) || ((Way)p).isClosed() && forClosedWays)) || (p instanceof Node && !notForNodes)) && (!onlyForUntaggedObjects || onlyMatchingTags(p));
+      System.out.println(p + " " + result + " " + forWays + " " + forClosedWays);
+      return result;
     }
     
     private boolean onlyMatchingTags(OsmPrimitive p) {
