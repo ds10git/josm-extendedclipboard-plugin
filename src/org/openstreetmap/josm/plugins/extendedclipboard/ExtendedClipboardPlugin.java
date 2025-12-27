@@ -17,19 +17,18 @@ public class ExtendedClipboardPlugin extends Plugin {
   public ExtendedClipboardPlugin(PluginInformation info) {
     super(info);
     instance = this;
+    nodeTemplateDialog = new NodeTemplateListDialog();
   }
 
   @Override
   public void mapFrameInitialized(MapFrame oldFrame, MapFrame newFrame) {
     if (oldFrame == null && newFrame != null) {
       dialog = new ExtendedClipboardDialog();
-      nodeTemplateDialog = new NodeTemplateListDialog();
       newFrame.addToggleDialog(nodeTemplateDialog);
       newFrame.addToggleDialog(dialog);
     } else if (oldFrame != null && newFrame == null) {
       dialog.clear();
       dialog = null;
-      nodeTemplateDialog = null;
     }
   }
 

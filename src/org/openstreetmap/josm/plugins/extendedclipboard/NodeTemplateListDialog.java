@@ -27,6 +27,7 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedList;
 import java.util.List;
@@ -36,12 +37,14 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import javax.swing.AbstractAction;
+import javax.swing.AbstractButton;
 import javax.swing.Action;
 import javax.swing.BorderFactory;
 import javax.swing.Box;
 import javax.swing.BoxLayout;
 import javax.swing.DefaultListCellRenderer;
 import javax.swing.DefaultListModel;
+import javax.swing.Icon;
 import javax.swing.ImageIcon;
 import javax.swing.JButton;
 import javax.swing.JCheckBox;
@@ -59,6 +62,7 @@ import javax.swing.JScrollPane;
 import javax.swing.JSeparator;
 import javax.swing.JTextArea;
 import javax.swing.JTextField;
+import javax.swing.JToolBar;
 import javax.swing.ListSelectionModel;
 import javax.swing.SwingUtilities;
 import javax.swing.event.ListSelectionListener;
@@ -97,6 +101,7 @@ import org.openstreetmap.josm.data.osm.event.WayNodesChangedEvent;
 import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.gui.SideButton;
 import org.openstreetmap.josm.gui.datatransfer.ClipboardUtils;
+import org.openstreetmap.josm.gui.datatransfer.OsmTransferHandler;
 import org.openstreetmap.josm.gui.datatransfer.PrimitiveTransferable;
 import org.openstreetmap.josm.gui.datatransfer.data.PrimitiveTransferData;
 import org.openstreetmap.josm.gui.dialogs.ToggleDialog;
@@ -112,12 +117,14 @@ import org.openstreetmap.josm.spi.preferences.PreferenceChangedListener;
 import org.openstreetmap.josm.tools.GBC;
 import org.openstreetmap.josm.tools.ImageProvider;
 import org.openstreetmap.josm.tools.ImageProvider.ImageSizes;
+import org.openstreetmap.josm.tools.ImageResource;
 import org.openstreetmap.josm.tools.Shortcut;
 
 public class NodeTemplateListDialog extends ToggleDialog implements DataSelectionListener, ActiveLayerChangeListener {
   private static final int MAXIMUM_LIST_COLUMN_NUMBER = 7;
   private static final int MAX_LIST_COLUMNS_NUMBER_DEFAULT = 3;
   
+  private static final String PREF_KEY_IDS = "NodeTemplateListDialog.nodeTemplates.ids";
   private static final String PREF_KEY_NAMES = "NodeTemplateListDialog.nodeTemplates.names";
   private static final String PREF_KEY_KEYS = "NodeTemplateListDialog.nodeTemplates.keys";
   private static final String PREF_KEY_CTRL_KEYS = "NodeTemplateListDialog.nodeTemplates.keysCtrl";
@@ -164,6 +171,12 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
   private final SideButton btnDelete;
 
   private final JPopupMenu popupMenu;
+
+  private final JMenu quickAccessMenu;
+  private final OsmTransferHandler transferHandler;
+  
+  private final HashMap<NodeTemplate, NodeTemplateMenuItem> quickAccessMenuItemMap;
+  
   private final JMenu importMenu;
   private final JMenu setIconMenu;
   private final JMenuItem addSeparator;
@@ -187,6 +200,8 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
   private boolean keyListenerAdded;
   private ActionListener autoTagActionListener;
   private DataSetListener dataSetListener;
+  
+  private DataSetListener dataSetEnabledStateListener;
   
   private boolean autoTagDisabled;
   
@@ -510,11 +525,11 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
             
             if(t.icon != null) {
               label.setIcon(t.icon);
-              label.setDisabledIcon(t.iconDisabled);
+            //  label.setDisabledIcon(t.iconDisabled);
             }
             else {
               label.setIcon(null);
-              label.setDisabledIcon(null);
+           //   label.setDisabledIcon(null);
             }
             
             label.setEnabled(t.isEnabled(wayTaggingPossible));
@@ -527,6 +542,15 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
     wayTaggingPossible = Config.getPref().getBoolean(PREF_KEY_TAG_SELECTION, true) ||Config.getPref().getBoolean(PREF_KEY_AUTO_TAG_SELECTION, true);
     deactivateAutoTaggingIfNotCompatible = Config.getPref().getBoolean(PREF_KEY_AUTO_TAG_SELECTION_AUTO_DEACTIVATE, false);
     clearSelectionAfterApplyingTag = Config.getPref().getBoolean(PREF_KEY_AUTO_TAG_CLEAR_SELECTION_AFTER_TAGGING, true);
+    
+    quickAccessMenu = new JMenu(tr("Node Template List"));
+    quickAccessMenu.setIcon(ImageProvider.get("dialogs/nodes"));
+    transferHandler = new OsmTransferHandler();
+    
+    MainApplication.getMenu().presetsMenu.add(quickAccessMenu,3);
+    MainApplication.getMenu().presetsMenu.insertSeparator(3);
+    
+    quickAccessMenuItemMap = new HashMap<>();
     
     popupMenu = new JPopupMenu();
     importMenu = new JMenu(tr("Import node template from preset"));
@@ -1106,6 +1130,9 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
     };
     
     load();
+
+    SelectionEventManager.getInstance().addSelectionListenerForEdt(this);
+    MainApplication.getLayerManager().addActiveLayerChangeListener(this);
   }
   
   private boolean updateAutoTagEnabledState() {
@@ -1334,6 +1361,84 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
     else {
       model.addElement(t);
     }
+    
+    addQuickAccess(t);
+  }
+  
+  private boolean isItemEnabled(NodeTemplateMenuItem item, Collection<OsmPrimitive> selection) {
+    return !item.t.isNotForNodes() || ((item.t.isForWays() && selection.stream().filter(w -> w instanceof Way && !((Way)w).isClosed()).count() > 0 || item.t.isForClosedWays() && selection.stream().filter(w -> w instanceof Way && ((Way)w).isClosed()).count() > 0) && (!item.t.isOnlyForUntaggedObjects() || selection.stream().filter(p -> !p.hasKeys()).count() > 0));
+  }
+  
+  private boolean isItemEabledForNodes(NodeTemplateMenuItem item, Collection<OsmPrimitive> selection) {
+    return item.t.isNotForNodes() || (!item.t.isNotForNodes() && selection.stream().filter(p -> p instanceof Node).count() > 0);
+  }
+  
+  private void updateQuickMenuItemsEnabledState() {
+    if(OsmDataManager.getInstance().getActiveDataSet() != null) {
+      Collection<OsmPrimitive> selection = OsmDataManager.getInstance().getActiveDataSet().getSelected();
+      
+      quickAccessMenuItemMap.forEach((k,item) -> {      
+        item.getAction().setEnabled(isItemEnabled(item, selection));
+        item.setEnabled(item.getAction().isEnabled() && isItemEabledForNodes(item, selection));
+      });
+    }
+  }
+  
+  private void updateQuickMenuItemIcon(NodeTemplate t) {
+    NodeTemplateMenuItem item = quickAccessMenuItemMap.get(t);
+    
+    if(item != null) {
+      Collection<OsmPrimitive> selection = OsmDataManager.getInstance().getActiveDataSet().getSelected();
+      
+      t.addIconToAction(item.getAction(), isItemEnabled(item, selection));
+      item.setEnabled(item.getAction().isEnabled() && isItemEabledForNodes(item, selection));
+    }
+  }
+
+  private void rebuildQuickAccessMenu() {
+    quickAccessMenu.removeAll();
+    
+    for(int k = 0; k < models.size(); k++) {
+      for(int i = 0; i < models.get(k).size(); i++) {
+        NodeTemplate t = models.get(k).get(i);
+        
+        if(t == SEPARATOR) {
+          quickAccessMenu.addSeparator();
+        }
+        else if(quickAccessMenuItemMap.containsKey(t)) {
+          quickAccessMenu.add(quickAccessMenuItemMap.get(t));
+        }
+      }
+    }
+  }
+  
+  private void addQuickAccess(NodeTemplate t) {
+    if(t.iconName != null) {
+      NodeTemplateMenuItem item = new NodeTemplateMenuItem(t, this);
+      quickAccessMenu.add(item);
+      quickAccessMenuItemMap.put(t, item);
+    }
+  }
+
+  private void updateQuickMenuEntry(NodeTemplate t) {
+    NodeTemplateMenuItem item = quickAccessMenuItemMap.get(t);
+    
+    if(item != null) {
+      item.setText(item.getName());
+      item.getAction().putValue(Action.NAME, t.name);
+      item.getAction().putValue(TaggingPreset.OPTIONAL_TOOLTIP_TEXT, t.name);
+      
+      if(MainApplication.getToolbar() != null) {
+        JToolBar toolbar = MainApplication.getToolbar().control;
+      
+        for(int i = 0; i < toolbar.getComponentCount(); i++) {
+          if(toolbar.getComponent(i) instanceof AbstractButton && Objects.equals(((AbstractButton)toolbar.getComponent(i)).getAction().getValue("toolbar"), NodeTemplate.class.getSimpleName()+"."+t.id)) {
+            ((AbstractButton)toolbar.getComponent(i)).setToolTipText(t.name);
+            break;
+          }
+        }
+      }
+    }
   }
   
   private synchronized void refillLists() {
@@ -1489,6 +1594,14 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
       if(n != null) {
         n.iconName = iconName;
         n.loadIcon();
+        
+        if(quickAccessMenuItemMap.containsKey(n)) {
+          updateQuickMenuItemIcon(n);
+        }
+        else {
+          addQuickAccess(n);
+          rebuildQuickAccessMenu();
+        }
         
         repaintSelectedRow();
       }
@@ -1651,14 +1764,50 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
   
   @Override
   public void activeOrEditLayerChanged(ActiveLayerChangeEvent e) { 
+    if(dataSetEnabledStateListener != null && e.getPreviousDataSet() != null) {
+      e.getPreviousDataSet().removeDataSetListener(dataSetEnabledStateListener);
+    }
+    
+    if(dataSetEnabledStateListener == null) {
+      dataSetEnabledStateListener = new DataSetListener() {
+        @Override
+        public void wayNodesChanged(WayNodesChangedEvent event) {
+          updateQuickMenuItemsEnabledState();
+        }
+        
+        @Override
+        public void tagsChanged(TagsChangedEvent event) {}
+        @Override
+        public void relationMembersChanged(RelationMembersChangedEvent event) {}
+        @Override
+        public void primitivesRemoved(PrimitivesRemovedEvent event) {}
+        @Override
+        public void primitivesAdded(PrimitivesAddedEvent event) {}
+        @Override
+        public void otherDatasetChange(AbstractDatasetChangedEvent event) {}
+        @Override
+        public void nodeMoved(NodeMovedEvent event) {}
+        @Override
+        public void dataChanged(DataChangedEvent event) {}
+      };
+    }
+    
     Layer layer = e.getSource().getActiveLayer();
     OsmDataLayer dataLayer = e.getSource().getActiveDataLayer();
+    
+    if(dataLayer != null && dataLayer.getDataSet() != null) {
+      dataLayer.getDataSet().addDataSetListener(dataSetEnabledStateListener);
+    }
     
     nodeList.setEnabled(layer != null && !layer.isBackgroundLayer() && dataLayer != null && !dataLayer.isLocked());
     updateBtnEnabledState();
   }
   
   private void handleSelection(Collection<OsmPrimitive> selection, boolean selectionTag, boolean ctrl, boolean shift, boolean clearSelection) {
+    handleSelection(getSelectedTemplate(), selection, selectionTag, ctrl, shift, clearSelection);
+  }
+  
+  private void handleSelection(NodeTemplate t, Collection<OsmPrimitive> selection, boolean selectionTag, boolean ctrl, boolean shift, boolean clearSelection) {
     if(selectionTag) {
       setAutoTagSelectionSelected(false);
       timer = 0;
@@ -1667,7 +1816,6 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
     if(((autoTagSelection.isVisible() && autoTagSelection.isSelected()) || selectionTag) && !autoTagDisabled) {
       if(!selection.isEmpty()) {
         selection.forEach(p -> {
-          final NodeTemplate t = getSelectedTemplate();
           final AtomicBoolean found = new AtomicBoolean();
           
           if(t != null) {
@@ -1704,6 +1852,7 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
     
     repaintLists();
     updateAutoTagEnabledState();
+    updateQuickMenuItemsEnabledState();
   }
 
   private void updateBtnEnabledState() {
@@ -1733,8 +1882,10 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
     if(sortDialog != null) {
       sortDialog.updateBtnEnabledState(this);
     }
+    
+    updateQuickMenuItemsEnabledState();
   }
-
+  
   private void repaintSelectedRow(JList<NodeTemplate> nodeList) {
     int index = nodeList.getSelectedIndex();
     if (index >= 0) {
@@ -1864,8 +2015,6 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
 
   @Override
   public void showNotify() {
-    SelectionEventManager.getInstance().addSelectionListenerForEdt(this);
-    MainApplication.getLayerManager().addActiveLayerChangeListener(this);
     Config.getPref().addKeyPreferenceChangeListener(PREF_KEY_MAX_NUMBER_OF_LIST_COLUMNS, prefListener);
     Config.getPref().addKeyPreferenceChangeListener(PREF_KEY_AUTO_TAG_SELECTION, prefListener2);
     Config.getPref().addKeyPreferenceChangeListener(PREF_KEY_TAG_SELECTION, prefListener3);
@@ -1883,9 +2032,6 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
   
   @Override
   public synchronized void hideNotify() {
-    SelectionEventManager.getInstance().removeSelectionListener(this);
-    MainApplication.getLayerManager().removeActiveLayerChangeListener(this);
-    
     removeKeyListenerIfSet();
     
     Config.getPref().removeKeyPreferenceChangeListener(PREF_KEY_MAX_NUMBER_OF_LIST_COLUMNS, prefListener);
@@ -1902,6 +2048,7 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
   }
 
   private void load() {    
+    List<String> ids = Config.getPref().getList(PREF_KEY_IDS, null);
     List<String> names = Config.getPref().getList(PREF_KEY_NAMES, null);
     List<Map<String, String>> keys = Config.getPref().getListOfMaps(PREF_KEY_KEYS, null);
     List<Map<String, String>> ctrl = Config.getPref().getListOfMaps(PREF_KEY_CTRL_KEYS, null);
@@ -1911,6 +2058,7 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
       int n = Math.min(names.size(), keys.size());
 
       for (int i = 0; i < n; i++) {
+        String id = ids != null ? ids.get(i) : null;
         String name = names.get(i);
         String iconName = null;
         boolean forWays = false;
@@ -1947,9 +2095,10 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
         
         if(Objects.equals(SEPARATOR.name, name)) {
           model.addElement(SEPARATOR);
+          quickAccessMenu.addSeparator();
         }
         else {
-          NodeTemplate t = new NodeTemplate(name, iconName, keys.get(i), forWays, forClosedWays, notForNodes, onlyForUntaggedObjects);
+          NodeTemplate t = new NodeTemplate(id, name, iconName, keys.get(i), forWays, forClosedWays, notForNodes, onlyForUntaggedObjects);
           
           if(ctrl != null) {
             t.ctrl = ctrl.get(i);
@@ -1957,6 +2106,7 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
           }
           
           model.addElement(t);
+          addQuickAccess(t);
         }
       }
     }
@@ -1971,17 +2121,20 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
         LinkedHashMap<String, String> map = new LinkedHashMap<>();
         map.put(tags[i].getKey(), tags[i].getValue());
         
-        model.addElement(new NodeTemplate(nameArr[i], iconArr[i], map, forWays[i], forClosedWays[i], forWays[i], false));
+        NodeTemplate t = new NodeTemplate(null, nameArr[i], iconArr[i], map, forWays[i], forClosedWays[i], forWays[i], false);
+        model.addElement(t);
+        addQuickAccess(t);
       }
       
       sortItem.actionPerformed(null);
     }
   }
 
-  private void saveModel(DefaultListModel<NodeTemplate> model, ArrayList<String> namesList, ArrayList<Map<String, String>> keysList, ArrayList<Map<String, String>> ctrlList, ArrayList<Map<String, String>> shiftList) {
+  private void saveModel(DefaultListModel<NodeTemplate> model, ArrayList<String> idsList, ArrayList<String> namesList, ArrayList<Map<String, String>> keysList, ArrayList<Map<String, String>> ctrlList, ArrayList<Map<String, String>> shiftList) {
     for (int i = 0; i < model.size(); i++) {
       NodeTemplate template = model.get(i);
 
+      String id = template.id;
       String name = template.name;
       int count = 1;
 
@@ -1998,6 +2151,7 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
         name += SEPARATOR_ICON + template.iconName;
       }
       
+      idsList.add(id);
       namesList.add(name);
       
       keysList.add(template.map);
@@ -2021,11 +2175,13 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
     final ArrayList<Map<String, String>> shiftList = new ArrayList<>();
     
     final ArrayList<String> namesList = new ArrayList<>();
+    final ArrayList<String> idsList = new ArrayList<>();
 
     for(DefaultListModel<NodeTemplate> m : models) {
-      saveModel(m, namesList, keysList, ctrlList, shiftList);
+      saveModel(m, idsList, namesList, keysList, ctrlList, shiftList);
     }
     
+    Config.getPref().putList(PREF_KEY_IDS, idsList);
     Config.getPref().putList(PREF_KEY_NAMES, namesList);
     Config.getPref().putListOfMaps(PREF_KEY_KEYS, keysList);
     Config.getPref().putListOfMaps(PREF_KEY_CTRL_KEYS, ctrlList);
@@ -2035,6 +2191,21 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
   @Override
   public String helpTopic() {
     return "Plugin/ExtendedClipboard";
+  }
+  
+  private void paste(NodeTemplate t, ActionEvent e) {
+    if(t != null && !t.isNotForNodes()) {
+      PrimitiveTransferable node = new PrimitiveTransferable(PrimitiveTransferData.getDataWithReferences(Collections.singleton(t.createNode((e.getModifiers() & ActionEvent.CTRL_MASK) == ActionEvent.CTRL_MASK, (e.getModifiers() & ActionEvent.SHIFT_MASK) == ActionEvent.SHIFT_MASK))));
+      ClipboardUtils.copy(node);
+      
+      transferHandler.pasteOn(MainApplication.getLayerManager().getEditLayer(), MainApplication.getMap().mapView.getCenter(), node);
+    }
+  }
+  
+  private void copy(NodeTemplate t, ActionEvent e) {
+    if(t != null && !t.isNotForNodes()) {
+      ClipboardUtils.copy(new PrimitiveTransferable(PrimitiveTransferData.getDataWithReferences(Collections.singleton(t.createNode((e.getModifiers() & ActionEvent.CTRL_MASK) == ActionEvent.CTRL_MASK, (e.getModifiers() & ActionEvent.SHIFT_MASK) == ActionEvent.SHIFT_MASK)))));
+    }
   }
   
   class AddAction extends JosmAction {
@@ -2099,7 +2270,10 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
 
     @Override
     public void actionPerformed(ActionEvent e) {
-      if(editNodeTemplate(getSelectedTemplate()) != null) {
+      NodeTemplate t = getSelectedTemplate();
+      
+      if(editNodeTemplate(t) != null) {
+        updateQuickMenuEntry(t);
         repaintSelectedRow();
       }
     }
@@ -2119,11 +2293,7 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
     @Override
     public void actionPerformed(ActionEvent e) {
       if(isEnabled()) { 
-        NodeTemplate template = getSelectedTemplate();
-        
-        if(template != null) {
-          ClipboardUtils.copy(new PrimitiveTransferable(PrimitiveTransferData.getDataWithReferences(Collections.singleton(template.createNode((e.getModifiers() & ActionEvent.CTRL_MASK) == ActionEvent.CTRL_MASK, (e.getModifiers() & ActionEvent.SHIFT_MASK) == ActionEvent.SHIFT_MASK)))));
-        }
+        copy(getSelectedTemplate(), e);
       }
     }
 
@@ -2141,20 +2311,25 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
     @Override
     public void actionPerformed(ActionEvent e) {
       if(isEnabled()) {
-        NodeTemplate t = getSelectedTemplate();
-        
-        if(t != null) {
-          PrimitiveTransferable node = new PrimitiveTransferable(PrimitiveTransferData.getDataWithReferences(Collections.singleton(t.createNode((e.getModifiers() & ActionEvent.CTRL_MASK) == ActionEvent.CTRL_MASK, (e.getModifiers() & ActionEvent.SHIFT_MASK) == ActionEvent.SHIFT_MASK))));
-          ClipboardUtils.copy(node);
-          
-          transferHandler.pasteOn(getLayerManager().getEditLayer(), MainApplication.getMap().mapView.getCenter(), node);
-        }
+        paste(getSelectedTemplate(),e);
       }
     }
 
     @Override
     protected final void updateEnabledState() {
       setEnabled(sortDialog == null && isNodeTemplateUsable() && !isSelectedTemplateNotForNodes());
+    }
+  }
+  
+  private void nodeTemplateDeleted(NodeTemplate t) {
+    NodeTemplateMenuItem item = quickAccessMenuItemMap.remove(t);
+    
+    if(item != null) {
+      quickAccessMenu.remove(item);
+      
+      if(MainApplication.getToolbar() != null && MainApplication.getToolbar().unregister(item.getAction()) != null) {
+        MainApplication.getToolbar().refreshToolbarControl();
+      }
     }
   }
   
@@ -2165,23 +2340,24 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
 
     @Override
     public void actionPerformed(ActionEvent e) {
-      if(JOptionPane.YES_OPTION == JOptionPane.showConfirmDialog(MainApplication.getMainFrame(), tr("Do you really want to delete selected template?"), tr("Delete selected template?"), JOptionPane.YES_NO_OPTION)) {        
-        for(int i = 0; i < models.size(); i++) {
-          int index = nodeLists.get(i).getSelectedIndex();
+      for(int i = 0; i < models.size(); i++) {
+        int index = nodeLists.get(i).getSelectedIndex();
+        
+        if(index != -1) {
+          NodeTemplate t = models.get(i).get(index);
           
-          if(index != -1) {
-            models.get(i).remove(index);
+          if(t == SEPARATOR || JOptionPane.YES_OPTION == JOptionPane.showConfirmDialog(MainApplication.getMainFrame(), tr("Do you really want to delete selected template?"), tr("Delete selected template?"), JOptionPane.YES_NO_OPTION)) {
+            nodeTemplateDeleted(models.get(i).remove(index));
             
             if(models.get(i).size() >= index) {
               nodeLists.get(i).setSelectedIndex(index-1);
             }
-            
-            break;
           }
+          
+          refillLists(true);
+          updateBtnEnabledState();
+          break;
         }
-        
-        refillLists(true);
-        updateBtnEnabledState();
       }
     }
 
@@ -2199,10 +2375,12 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
       }
     };
     
+    private String id;
     private String name;
     private String iconName;
     private ImageIcon icon;
-    private ImageIcon iconDisabled;
+    private ImageIcon iconBig;
+    
     private boolean forWays;
     private boolean forClosedWays;
     private boolean notForNodes;
@@ -2212,8 +2390,9 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
     private Map<String, String> ctrl;
     private Map<String, String> shift;
     
-    public NodeTemplate(String name, String iconName, Map<String, String> map, boolean forWays, boolean forClosedWays, boolean notForNodes, boolean onlyForUntaggedObjects) {
+    public NodeTemplate(String id, String name, String iconName, Map<String, String> map, boolean forWays, boolean forClosedWays, boolean notForNodes, boolean onlyForUntaggedObjects) {
       this.name = name;
+      this.id = id == null ? System.currentTimeMillis()+name+((int)(Math.random()*1000)) : id;
       this.map = getMapFromMap(map);
       this.iconName = iconName;
       this.forWays = forWays;
@@ -2246,6 +2425,7 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
         }
       });
       
+      this.id = String.valueOf(System.currentTimeMillis()+((int)(Math.random() * 10000)));
       this.iconName = iconName;
       loadName(p);
       loadIcon();
@@ -2253,6 +2433,7 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
     
     public NodeTemplate(String name) {
       this.name = name;
+      this.id = System.currentTimeMillis()+name+((int)(Math.random() * 1000));
       map = new LinkedHashMap<>();
       ctrl = new LinkedHashMap<>();
       shift = new LinkedHashMap<>();
@@ -2312,10 +2493,8 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
       return (!map.isEmpty() || !ctrl.isEmpty() || !shift.isEmpty()) && (tagging || !isNotForNodes());
     }
     
-    public boolean isCompatible(OsmPrimitive p) {
-      boolean result = ((p instanceof Way && ((!((Way)p).isClosed() && forWays) || ((Way)p).isClosed() && forClosedWays)) || (p instanceof Node && !notForNodes)) && (!onlyForUntaggedObjects || onlyMatchingTags(p));
-      System.out.println(p + " " + result + " " + forWays + " " + forClosedWays);
-      return result;
+    public boolean isCompatible(OsmPrimitive p) {      
+      return ((p instanceof Way && ((!((Way)p).isClosed() && forWays) || ((Way)p).isClosed() && forClosedWays)) || (p instanceof Node && !notForNodes)) && (!onlyForUntaggedObjects || onlyMatchingTags(p));
     }
     
     private boolean onlyMatchingTags(OsmPrimitive p) {
@@ -2408,58 +2587,122 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
       return cmds;
     }
     
+    private void internalAddIconToAction(Action a, boolean enabled) {
+      a.putValue(Action.SMALL_ICON, icon);
+      a.putValue(Action.LARGE_ICON_KEY, iconBig);
+      a.setEnabled(enabled);
+    }
+    
+    public void addIconToAction(Action a, boolean enabled) {
+      if(wait != null && wait.isAlive()) {
+        new Thread() {
+          public void run() {
+            while(wait.isAlive()) {
+              try {
+                Thread.sleep(100);
+              } catch (InterruptedException e) {}
+            }
+            
+            SwingUtilities.invokeLater(() -> {
+              internalAddIconToAction(a, enabled);
+            });
+          };
+        }.start();
+      }
+      else {
+        internalAddIconToAction(a, enabled);
+      }
+    }
+    
+    private Thread wait;
+    
     private void loadIcon() {
       if(iconName != null) {
         try {
           final TaggingPreset dummy = new TaggingPreset();
           dummy.setIcon(iconName);
           
-          Thread wait = new Thread() {
+          wait = new Thread() {
             @Override
             public void run() {
-              int time = 1000;
+              int time = 2000;
               
-              while(dummy.getIcon() == null && (time-=100) > 0) {
+              while(dummy.getValue("ImageResource") == null && (time-=100) > 0) {
                 try {
                   sleep(100);
                 } catch (InterruptedException e) {
                   // ignore intentionally
                 }
               }
-              final ImageIcon i = dummy.getIcon();
               
-              if(i != null) {
-                icon = new ImageIcon() {
-                  @Override
-                  public int getIconWidth() {
-                    return 16;
-                  }
-                  
-                  @Override
-                  public int getIconHeight() {
-                    return 16;
-                  }
-                  
-                  @Override
-                  public synchronized void paintIcon(Component c, Graphics g, int x, int y) {
-                    x += getIconWidth()/2 - i.getIconWidth()/2;
-                    y += getIconHeight()/2 - i.getIconHeight()/2;
+              ImageResource ir = (ImageResource)dummy.getValue("ImageResource");
+              
+              if(ir != null) {
+                final ImageIcon i = ir.getImageIcon(ImageSizes.SMALLICON.getImageDimension());
+                
+                if(i != null) {
+                  icon = new ImageIcon() {
+                    @Override
+                    public int getIconWidth() {
+                      return ImageSizes.SMALLICON.getAdjustedWidth();
+                    }
                     
-                    i.paintIcon(c, g, x, y);
-                  }
-                };
-                
-
-                BufferedImage iconImage = new BufferedImage(icon.getIconWidth(), icon.getIconHeight(), BufferedImage.TYPE_INT_ARGB);
-                
-                Graphics2D bGr = iconImage.createGraphics();
-                icon.paintIcon(null, bGr, 0, 0);
-                bGr.dispose();
-                
-                ColorConvertOp op = new ColorConvertOp(ColorSpace.getInstance(ColorSpace.CS_GRAY), null);
-                op.filter(iconImage, iconImage);
-                
-                iconDisabled = new ImageIcon(iconImage);
+                    @Override
+                    public int getIconHeight() {
+                      return ImageSizes.SMALLICON.getAdjustedHeight();
+                    }
+                    
+                    @Override
+                    public synchronized void paintIcon(Component c, Graphics g, int x, int y) {
+                      x += getIconWidth()/2 - i.getIconWidth()/2;
+                      y += getIconHeight()/2 - i.getIconHeight()/2;
+                      
+                      i.paintIcon(c, g, x, y);
+                    }
+                  };
+                 
+                  
+                  final ImageIcon iBig = ir.getImageIcon(ImageSizes.LARGEICON.getImageDimension());
+                  final ImageIcon node = ImageProvider.get("data/node", ImageSizes.SMALLICON);
+                  
+                  iconBig = new ImageIcon() {
+                    @Override
+                    public int getIconWidth() {
+                      return ImageSizes.LARGEICON.getAdjustedWidth();
+                    }
+                    
+                    @Override
+                    public int getIconHeight() {
+                      return ImageSizes.LARGEICON.getAdjustedHeight();
+                    }
+                    
+                    @Override
+                    public synchronized void paintIcon(Component c, Graphics g, int x, int y) {
+                      int xOld = x;
+                      int yOld = y;
+                      
+                      x += getIconWidth()/2 - iBig.getIconWidth()/2;
+                      y += getIconHeight()/2 - iBig.getIconHeight()/2;
+                      iBig.paintIcon(c, g, x, y);
+                      
+                      xOld += getIconWidth();
+                      yOld += getIconHeight();
+                      
+                      xOld -= node.getIconWidth()*3/4;
+                      yOld -= node.getIconHeight()*3/4;
+                      
+                      node.paintIcon(c, g, xOld, yOld);
+                    }
+                  };
+  
+                  BufferedImage iconImage = new BufferedImage(icon.getIconWidth(), icon.getIconHeight(), BufferedImage.TYPE_INT_ARGB);
+                  icon.paintIcon(null, iconImage.getGraphics(), 0, 0);
+                  icon = new ImageIcon(iconImage);
+                  
+                  iconImage = new BufferedImage(iconBig.getIconWidth(), iconBig.getIconHeight(), BufferedImage.TYPE_INT_ARGB);
+                  iconBig.paintIcon(null, iconImage.getGraphics(), 0, 0);
+                  iconBig = new ImageIcon(iconImage);
+                }
               }
             }
           };
@@ -2482,6 +2725,8 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
           name += key+"="+value;          
         });
       }
+      
+      id = System.currentTimeMillis()+name+((int)(Math.random() * 1000));
     }
 
     public Node createNode(boolean ctrl, boolean shift) {
@@ -2668,6 +2913,7 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
       exit.setToolTipText(tr("Exit sorting"));
       exit.addActionListener(e -> {
         d.stopSortingManually();
+        d.rebuildQuickAccessMenu();
         dispose();
       });
       
@@ -2729,6 +2975,80 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
       
       setLocation(p);
       setVisible(true);
+    }
+  }
+  
+  private Thread menuTemplateThread;
+  private int menuTemplateClickCount;
+  private long menuTemplateLastClick;
+  
+  private synchronized void menuTemplateSelected(ActionEvent e, NodeTemplate t) {
+    menuTemplateLastClick = System.currentTimeMillis();
+    menuTemplateClickCount++;
+    
+    if(menuTemplateThread == null || !menuTemplateThread.isAlive()) {
+      menuTemplateThread = new Thread() {
+        @Override
+        public void run() {
+          while(System.currentTimeMillis()-menuTemplateLastClick < 200) {
+            try {
+              Thread.sleep(100);
+            } catch (InterruptedException e) {}
+          }
+          
+          SwingUtilities.invokeLater(() -> { 
+            if(menuTemplateClickCount == 1) {
+              handleSelection(t, OsmDataManager.getInstance().getActiveDataSet().getSelected(),  Config.getPref().getBoolean(PREF_KEY_TAG_SELECTION, true), ((e.getModifiers() & ActionEvent.CTRL_MASK) == ActionEvent.CTRL_MASK), ((e.getModifiers() & ActionEvent.SHIFT_MASK) == ActionEvent.SHIFT_MASK), false);
+            }
+            else if(menuTemplateClickCount == 2) {
+              copy(t, e);
+            }
+            else if(menuTemplateClickCount == 3) {
+              paste(t, e);
+            }
+            
+            menuTemplateClickCount = 0;
+          });
+        }
+      };
+      menuTemplateThread.start();
+    }
+  }
+  
+  static final class NodeTemplateMenuItem extends JMenuItem {
+    private NodeTemplate t;
+    
+    public NodeTemplateMenuItem(NodeTemplate t, NodeTemplateListDialog d) {
+      super(t.name, t.icon);
+      this.t = t;
+      
+      Action a = new AbstractAction() {
+        @Override
+        public void actionPerformed(ActionEvent e) {
+          d.menuTemplateSelected(e, t);
+        }
+      };
+      
+      a.putValue("toolbar", NodeTemplate.class.getSimpleName()+"."+t.id);
+      a.putValue(Action.NAME, t.name);
+      a.putValue(TaggingPreset.OPTIONAL_TOOLTIP_TEXT, t.name);
+      t.addIconToAction(a, false);
+      
+      setAction(a);
+      
+      if(MainApplication.getToolbar() != null) {
+        MainApplication.getToolbar().register(a);
+      }
+    }
+    
+    @Override
+    public String getText() {
+      return t != null ? t.name : super.getText();
+    }
+    
+    @Override
+    public Icon getIcon() {
+      return t != null ? t.icon : super.getIcon();
     }
   }
 }
