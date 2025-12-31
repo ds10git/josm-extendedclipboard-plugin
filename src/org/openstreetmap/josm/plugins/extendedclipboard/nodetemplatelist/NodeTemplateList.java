@@ -130,6 +130,7 @@ public class NodeTemplateList {
   }
   
   void nodeTemplateDeleted(NodeTemplate t) {
+    list.remove(t);
     NodeTemplateMenuItem item = quickAccessMenuItemMap.remove(t);
     
     if(item != null) {
