@@ -1172,9 +1172,11 @@ public class NodeTemplateListDialog extends ToggleDialog implements DataSelectio
     
   @Override
   public void showDialog() {
-    super.showDialog();
-    
-    SwingUtilities.invokeLater(() -> refillLists(true));
+    if(titleBar != null) {
+      super.showDialog();
+      
+      SwingUtilities.invokeLater(() -> refillLists(true));
+    }
   }
   
   private void resizeNodeLists(boolean force) {
