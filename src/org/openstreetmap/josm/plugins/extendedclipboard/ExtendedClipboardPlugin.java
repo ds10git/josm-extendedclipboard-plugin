@@ -4,6 +4,8 @@ package org.openstreetmap.josm.plugins.extendedclipboard;
 import org.openstreetmap.josm.gui.MapFrame;
 import org.openstreetmap.josm.plugins.Plugin;
 import org.openstreetmap.josm.plugins.PluginInformation;
+import org.openstreetmap.josm.plugins.extendedclipboard.nodetemplatelist.NodeTemplateList;
+import org.openstreetmap.josm.plugins.extendedclipboard.nodetemplatelist.NodeTemplateListDialog;
 
 /**
  * Collection of utilities
@@ -17,6 +19,7 @@ public class ExtendedClipboardPlugin extends Plugin {
   public ExtendedClipboardPlugin(PluginInformation info) {
     super(info);
     instance = this;
+    NodeTemplateList.initialize();
   }
 
   @Override
@@ -24,7 +27,7 @@ public class ExtendedClipboardPlugin extends Plugin {
     if (oldFrame != null) {
       oldFrame.removeToggleDialog(dialog);
       oldFrame.removeToggleDialog(nodeTemplateDialog);
-      
+      NodeTemplateList.get().setDialog(null);
       dialog.clear();
       dialog = null;
       nodeTemplateDialog = null;
@@ -32,6 +35,7 @@ public class ExtendedClipboardPlugin extends Plugin {
     
     if (newFrame != null) {
       nodeTemplateDialog = new NodeTemplateListDialog();
+      NodeTemplateList.get().setDialog(nodeTemplateDialog);
       dialog = new ExtendedClipboardDialog();
       newFrame.addToggleDialog(nodeTemplateDialog);
       newFrame.addToggleDialog(dialog);
